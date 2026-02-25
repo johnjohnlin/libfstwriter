@@ -1,0 +1,4 @@
+/build
+*.fst
+*.fst.hier
+*.vcd

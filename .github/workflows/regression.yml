@@ -1,0 +1,26 @@
+name: Libfstcpp Regression Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  regression:
+    name: Build and Run Regression
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtest-dev lcov
+
+      - name: Run tests
+        run: ./run_regression.sh --coverage
