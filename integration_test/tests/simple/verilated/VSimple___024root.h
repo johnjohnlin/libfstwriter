@@ -16,14 +16,17 @@ class alignas(VL_CACHE_LINE_BYTES) VSimple___024root final : public VerilatedMod
     // DESIGN SPECIFIC STATE
     VL_IN8(clk,0,0);
     VL_IN8(rst_n,0,0);
-    CData/*1:0*/ Simple__DOT__counter_add;
+    VL_OUT8(counter_add_enum_version,1,0);
+    VL_OUT8(counter_add,1,0);
+    CData/*0:0*/ __VstlFirstIteration;
     CData/*0:0*/ __Vtrigprevexpr___TOP__clk__0;
     CData/*0:0*/ __Vtrigprevexpr___TOP__rst_n__0;
-    VlWide<4>/*126:0*/ Simple__DOT__counter_shift;
+    VL_OUTW(counter_shift,126,0,4);
+    VL_OUTW(super_long,6999,0,219);
     IData/*31:0*/ __VactIterCount;
+    VlUnpacked<QData/*63:0*/, 1> __VstlTriggered;
     VlUnpacked<QData/*63:0*/, 1> __VactTriggered;
     VlUnpacked<QData/*63:0*/, 1> __VnbaTriggered;
-    VlUnpacked<CData/*0:0*/, 2> __Vm_traceActivity;
 
     // INTERNAL VARIABLES
     VSimple__Syms* const vlSymsp;

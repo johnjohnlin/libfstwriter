@@ -21,20 +21,24 @@ void VSimple___024root__trace_chg_0_sub_0(VSimple___024root* vlSelf, VerilatedFs
     auto& vlSelfRef = std::ref(*vlSelf).get();
     // Body
     uint32_t* const oldp VL_ATTR_UNUSED = bufp->oldp(vlSymsp->__Vm_baseCode + 1);
-    if (VL_UNLIKELY((vlSelfRef.__Vm_traceActivity[1U]))) {
-        bufp->chgCData(oldp+0,(vlSelfRef.Simple__DOT__counter_add),2);
-        bufp->chgWData(oldp+1,(vlSelfRef.Simple__DOT__counter_shift),127);
-    }
-    bufp->chgBit(oldp+5,(vlSelfRef.clk));
-    bufp->chgBit(oldp+6,(vlSelfRef.rst_n));
+    bufp->chgBit(oldp+0,(vlSelfRef.clk));
+    bufp->chgBit(oldp+1,(vlSelfRef.rst_n));
+    bufp->chgCData(oldp+2,(vlSelfRef.counter_add_enum_version),2);
+    bufp->chgCData(oldp+3,(vlSelfRef.counter_add),2);
+    bufp->chgWData(oldp+4,(vlSelfRef.counter_shift),127);
+    bufp->chgWData(oldp+8,(vlSelfRef.super_long),7000);
 }
 
 void VSimple___024root__trace_cleanup(void* voidSelf, VerilatedFst* /*unused*/) {
     VL_DEBUG_IF(VL_DBG_MSGF("+    VSimple___024root__trace_cleanup\n"); );
+    // Locals
+    VlUnpacked<CData/*0:0*/, 1> __Vm_traceActivity;
+    for (int __Vi0 = 0; __Vi0 < 1; ++__Vi0) {
+        __Vm_traceActivity[__Vi0] = 0;
+    }
     // Body
     VSimple___024root* const __restrict vlSelf VL_ATTR_UNUSED = static_cast<VSimple___024root*>(voidSelf);
     VSimple__Syms* const __restrict vlSymsp VL_ATTR_UNUSED = vlSelf->vlSymsp;
     vlSymsp->__Vm_activity = false;
-    vlSymsp->TOP.__Vm_traceActivity[0U] = 0U;
-    vlSymsp->TOP.__Vm_traceActivity[1U] = 0U;
+    __Vm_traceActivity[0U] = 0U;
 }

@@ -15,6 +15,7 @@
 
 // INCLUDE MODULE CLASSES
 #include "VSimple___024root.h"
+#include "VSimple___024unit.h"
 
 // SYMS CLASS (contains all model state)
 class alignas(VL_CACHE_LINE_BYTES) VSimple__Syms final : public VerilatedSyms {

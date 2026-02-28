@@ -124,6 +124,7 @@ Handle Writer::createVar(
 	Handle alias_handle
 ) {
 	FST_CHECK(not hierarchy_finalized_);
+	FST_CHECK(bitwidth <= VariableInfo::kMaxSupportedBitwidth);
 	// write hierarchy entry: type, direction, name, length, alias
 	StreamVectorWriteHelper h(hierarchy_buffer_);
 

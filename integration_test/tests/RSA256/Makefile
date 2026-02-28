@@ -12,4 +12,4 @@ SRCS := RSA_tb.sv \
 	TwoPower.sv
 
 bench1: $(SRCS)
-	verilator --cc $(SRCS) -Mdir fixed --trace-fst -Wno-lint --timing
+	verilator --cc $(SRCS) -Mdir verilated --trace-fst -Wno-lint --timing

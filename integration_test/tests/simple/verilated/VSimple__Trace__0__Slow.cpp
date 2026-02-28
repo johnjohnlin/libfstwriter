@@ -11,15 +11,20 @@ VL_ATTR_COLD void VSimple___024root__trace_init_sub__TOP__0(VSimple___024root* v
     // Body
     const int c = vlSymsp->__Vm_baseCode;
     tracep->pushPrefix("$rootio", VerilatedTracePrefixType::SCOPE_MODULE);
-    tracep->declBit(c+6,0,"clk",-1, VerilatedTraceSigDirection::INPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1);
-    tracep->declBit(c+7,0,"rst_n",-1, VerilatedTraceSigDirection::INPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1);
+    tracep->declBit(c+1,0,"clk",-1, VerilatedTraceSigDirection::INPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1);
+    tracep->declBit(c+2,0,"rst_n",-1, VerilatedTraceSigDirection::INPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1);
+    tracep->declBus(c+3,0,"counter_add_enum_version",1, VerilatedTraceSigDirection::OUTPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1, 1,0);
+    tracep->declBus(c+4,0,"counter_add",-1, VerilatedTraceSigDirection::OUTPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1, 1,0);
+    tracep->declArray(c+5,0,"counter_shift",-1, VerilatedTraceSigDirection::OUTPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1, 126,0);
+    tracep->declArray(c+9,0,"super_long",-1, VerilatedTraceSigDirection::OUTPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1, 6999,0);
     tracep->popPrefix();
     tracep->pushPrefix("Simple", VerilatedTracePrefixType::SCOPE_MODULE);
-    tracep->declBit(c+6,0,"clk",-1, VerilatedTraceSigDirection::INPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1);
-    tracep->declBit(c+7,0,"rst_n",-1, VerilatedTraceSigDirection::INPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1);
-    tracep->declBus(c+1,0,"counter_add_enum_version",1, VerilatedTraceSigDirection::NONE, VerilatedTraceSigKind::VAR, VerilatedTraceSigType::LOGIC, false,-1, 1,0);
-    tracep->declBus(c+1,0,"counter_add",-1, VerilatedTraceSigDirection::NONE, VerilatedTraceSigKind::VAR, VerilatedTraceSigType::LOGIC, false,-1, 1,0);
-    tracep->declArray(c+2,0,"counter_shift",-1, VerilatedTraceSigDirection::NONE, VerilatedTraceSigKind::VAR, VerilatedTraceSigType::LOGIC, false,-1, 126,0);
+    tracep->declBit(c+1,0,"clk",-1, VerilatedTraceSigDirection::INPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1);
+    tracep->declBit(c+2,0,"rst_n",-1, VerilatedTraceSigDirection::INPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1);
+    tracep->declBus(c+3,0,"counter_add_enum_version",1, VerilatedTraceSigDirection::OUTPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1, 1,0);
+    tracep->declBus(c+4,0,"counter_add",-1, VerilatedTraceSigDirection::OUTPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1, 1,0);
+    tracep->declArray(c+5,0,"counter_shift",-1, VerilatedTraceSigDirection::OUTPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1, 126,0);
+    tracep->declArray(c+9,0,"super_long",-1, VerilatedTraceSigDirection::OUTPUT, VerilatedTraceSigKind::WIRE, VerilatedTraceSigType::LOGIC, false,-1, 6999,0);
     tracep->popPrefix();
 }
 
@@ -70,8 +75,10 @@ VL_ATTR_COLD void VSimple___024root__trace_full_0_sub_0(VSimple___024root* vlSel
     auto& vlSelfRef = std::ref(*vlSelf).get();
     // Body
     uint32_t* const oldp VL_ATTR_UNUSED = bufp->oldp(vlSymsp->__Vm_baseCode);
-    bufp->fullCData(oldp+1,(vlSelfRef.Simple__DOT__counter_add),2);
-    bufp->fullWData(oldp+2,(vlSelfRef.Simple__DOT__counter_shift),127);
-    bufp->fullBit(oldp+6,(vlSelfRef.clk));
-    bufp->fullBit(oldp+7,(vlSelfRef.rst_n));
+    bufp->fullBit(oldp+1,(vlSelfRef.clk));
+    bufp->fullBit(oldp+2,(vlSelfRef.rst_n));
+    bufp->fullCData(oldp+3,(vlSelfRef.counter_add_enum_version),2);
+    bufp->fullCData(oldp+4,(vlSelfRef.counter_add),2);
+    bufp->fullWData(oldp+5,(vlSelfRef.counter_shift),127);
+    bufp->fullWData(oldp+9,(vlSelfRef.super_long),7000);
 }
