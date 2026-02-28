@@ -35,8 +35,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 # Collect cpp files (recursively) and split regular library sources vs tests (files ending with ".test.cpp")
 file(GLOB_RECURSE FST_CPP_FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/fstcpp/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/gtkwave/*.cpp"
+    "fstcpp/*.cpp"
 )
 
 # Lists to populate
@@ -77,17 +76,18 @@ endforeach()
 #######################################
 # Build the integration tests for testing bit-true behavior
 #######################################
-# compile verilator_shared/*.cpp as an cmake object
+# compile verilator_share/*.cpp as an cmake object
+# Non-recursively to exclude gtkwave/ folder
 file(
-    GLOB_RECURSE
-    VERILATOR_SHARED
-    ${CMAKE_CURRENT_SOURCE_DIR}/integration_test/verilator_share/*.cpp
+    GLOB
+    VERILATOR_SHARE
+    integration_test/verilator_share/*.cpp
 )
-add_library(verilator_shared OBJECT ${VERILATOR_SHARED})
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/integration_test/verilator_share)
+add_library(verilator_share OBJECT ${VERILATOR_SHARE})
+include_directories(integration_test/verilator_share)
 
 # for all direct folders under integration_test/tests, find all *.cpp files and compile them as an executable
-file(GLOB TEST_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/integration_test/tests/*)
+file(GLOB TEST_PATHS integration_test/tests/*)
 
 foreach(TEST_PATH ${TEST_PATHS})
     get_filename_component(TEST_NAME ${TEST_PATH} NAME)
@@ -98,13 +98,13 @@ foreach(TEST_PATH ${TEST_PATHS})
         file(GLOB_RECURSE TEST_SRCS ${TEST_PATH}/*.cpp)
 
         # C executable
-        add_executable(${TEST_NAME}_c ${TEST_SRCS} gtkwave/fstapi.c $<TARGET_OBJECTS:verilator_shared>)
+        add_executable(${TEST_NAME}_c ${TEST_SRCS} integration_test/verilator_share/gtkwave/fstapi.c $<TARGET_OBJECTS:verilator_share>)
         target_link_libraries(${TEST_NAME}_c PRIVATE fstcpp)
         target_include_directories(${TEST_NAME}_c PRIVATE ${TEST_PATH}/verilated)
         add_test(NAME ${TEST_NAME}_c COMMAND ${TEST_NAME}_c ${TEST_NAME}_dump_c.fst)
 
         # C++ executable
-        add_executable(${TEST_NAME}_cpp ${TEST_SRCS} gtkwave/fstapi.cpp $<TARGET_OBJECTS:verilator_shared>)
+        add_executable(${TEST_NAME}_cpp ${TEST_SRCS} integration_test/verilator_share/gtkwave/fstapi.cpp $<TARGET_OBJECTS:verilator_share>)
         target_link_libraries(${TEST_NAME}_cpp PRIVATE fstcpp)
         target_include_directories(${TEST_NAME}_cpp PRIVATE ${TEST_PATH}/verilated)
         add_test(NAME ${TEST_NAME}_cpp COMMAND ${TEST_NAME}_cpp ${TEST_NAME}_dump_cpp.fst)
