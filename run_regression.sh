@@ -5,13 +5,13 @@
 # --build <build_dir>, default to ./build/regression
 # --coverage, default to false
 # --coverage-html, default to false, autoset --coverage to true
-# --coverage-line, default to 70
-# --coverage-func, default to 70
+# --coverage-line, default to 85
+# --coverage-func, default to 85
 BUILD_DIR="build/regression"
 COVERAGE=0
 COVERAGE_HTML=0
-COVERAGE_LINE=70
-COVERAGE_FUNC=70
+COVERAGE_LINE=85
+COVERAGE_FUNC=85
 ROOT_DIR=$(pwd)
 TEST_EXIT_CODE=0
 while [[ "$#" -gt 0 ]]; do
@@ -32,7 +32,7 @@ function CMakeInit() {
 	mkdir -p "$BUILD_DIR"
 	local cov_opt="OFF"
 	if [ $COVERAGE -eq 1 ]; then cov_opt="ON"; fi
-	cmake -B "$BUILD_DIR" -S src -G Ninja -DENABLE_COVERAGE=$cov_opt
+	cmake -B "$BUILD_DIR" -S . -G Ninja -DENABLE_COVERAGE=$cov_opt
 }
 
 function BuildAndRunTests() {
@@ -44,7 +44,7 @@ function BuildAndRunTests() {
 function CollectCoverage() {
 	if [ $COVERAGE = 1 ]; then
 		lcov --capture --directory . --output-file coverage.info --ignore-errors inconsistent,mismatch,empty
-		lcov --extract coverage.info '*/src/fstcpp/*' --output-file coverage.info --ignore-errors inconsistent,mismatch,empty
+		lcov --extract coverage.info '*/fstcpp/*' --output-file coverage.info --ignore-errors inconsistent,mismatch,empty
 		if [ $COVERAGE_HTML = 1 ]; then
 			genhtml coverage.info --output-directory html
 		fi
