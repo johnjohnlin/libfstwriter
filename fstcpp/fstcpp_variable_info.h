@@ -40,19 +40,18 @@ class VariableInfo final {
 	//   - (TODO) Always aligned to kCapacityBase (will be changed to 64B)
 	//     so we can use the LSB for capacity_log2
 	uint8_t *data = nullptr;
-	// 2. 8B misc:
-	//   - 33b size (TODO: maybe 32b is enough, who needs a single variable
-	//     larger than 4G in a block?)
-	//   - 6b capacity_log2 (offset by -kCapacityBaseShift)
-	//   - 12b last_written_bytes
-	//     (TODO: can be calculated from only EncodingType, which is only 2b)
-	//   - 12b bitwidth
-	//   - 1b is_real
-	uint64_t misc = 0;
+	// 2. 4B size. The same as vector.size(), but we only need 32b.
+	uint32_t size_ = 0;
+	// 3. 4B misc. Highly compacted information for max cache efficiency.
+	//    - 6b capacity_log2
+	//    - 2b last_encoding_type
+	//    - 23b bitwidth
+	//    - 1b is_real
+	uint32_t misc = 0;
 	// end of data members
 
 	inline bool need_reallocate(uint64_t new_size) const {
-		const uint64_t capacity = data == nullptr ? 0 : (kCapacityBase << ((misc >> 25) & 0x3f));
+		const uint64_t capacity = data == nullptr ? 0 : (kCapacityBase << ((misc >> 26) & 0x3f));
 		return capacity < new_size;
 	}
 	// This function is cold, so we don't inline it
@@ -64,17 +63,20 @@ class VariableInfo final {
 		misc |= is_real_;
 	}
 
-	inline void size(uint64_t size_) { misc = (misc << 33 >> 33) | size_ << 33; }
+	inline void size(uint64_t s) { size_ = s; }
 
 public:
-	inline uint64_t size() const { return misc >> 33; }
-	inline uint16_t bitwidth() const { return (misc >> 1) & 0xfff; }
+	static constexpr uint32_t kMaxSupportedBitwidth = 0x7fffff;
+	inline uint64_t size() const { return size_; }
+	inline uint32_t bitwidth() const { return (misc >> 1) & 0x7fffff; }
 	inline bool is_real() const { return misc & 1; }
-	inline void last_written_bytes(uint64_t last_written_bytes_) {
-		const uint64_t mask = ~(uint64_t(0xfff) << 13);
-		misc = (misc & mask) | (last_written_bytes_ << 13);
+	inline void last_written_encode_type(EncodingType encoding_) {
+		misc = (misc & ~(3u << 24)) | ((static_cast<uint32_t>(encoding_) & 3) << 24);
 	}
-	inline uint64_t last_written_bytes() const { return (misc >> 13) & 0xfff; }
+	inline EncodingType last_written_encode_type() const {
+		return static_cast<EncodingType>((misc >> 24) & 3);
+	}
+	uint64_t last_written_bytes() const;
 
 	template <typename Callable, typename... Args>
 	auto DispatchHelper(Callable &&callable, Args &&...args) const;
@@ -92,6 +94,7 @@ public:
 		data = rhs.data;
 		rhs.data = nullptr;
 		misc = rhs.misc;
+		size_ = rhs.size_;
 		// rhs.misc = 0;
 	}
 
@@ -209,15 +212,13 @@ class VariableInfoDouble {
 public:
 	VariableInfoDouble(VariableInfo &info_) : info(info_) {}
 
-private:
+public:
 	inline size_t addedSize(EncodingType encoding) const {
 		(void)encoding;
 		return kEmitTimeIndexAndEncodingSize + sizeof(double);
 	}
 
-	// first: its pointer to the first byte of the value
-	// second: size of the time index+encoding type+value
-	inline std::pair<EmitWriterHelper, size_t> emitValueChangeCommonPart(
+	inline EmitWriterHelper emitValueChangeCommonPart(
 		uint64_t current_time_index, EncodingType encoding
 	) {
 		if (current_time_index + 1 == 0) {
@@ -230,7 +231,7 @@ private:
 
 		EmitWriterHelper wh(info.data_ptr() + old_size);
 		wh.writeTimeIndexAndEncoding(current_time_index, encoding);
-		return std::make_pair(wh, added_size);
+		return wh;
 	}
 
 public:
@@ -241,22 +242,19 @@ public:
 		wh.writeTimeIndexAndEncoding(0, EncodingType::BINARY).write<double>(0.0);
 	}
 
-	uint64_t emitValueChange(uint64_t current_time_index, const uint64_t val) {
-		auto wh_added = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+	void emitValueChange(uint64_t current_time_index, const uint64_t val) {
+		auto wh = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
 		// Note, do not use write<double> here since the uint64_t is
 		// already bit_cast'ed from double
 		wh.write<uint64_t>(val);
-		return added_size;
 	}
 
 	// Double variables should not use these array-based emitValueChange overloads.
 	// We implement them to satisfy the VairableInfo::DispatchHelper template instantiation.
-	uint64_t emitValueChange(uint64_t, const uint32_t *, EncodingType) {
+	void emitValueChange(uint64_t, const uint32_t *, EncodingType) {
 		throw std::runtime_error("emitValueChange(uint32_t*) not supported for Double");
 	}
-	uint64_t emitValueChange(uint64_t, const uint64_t *, EncodingType) {
+	void emitValueChange(uint64_t, const uint64_t *, EncodingType) {
 		throw std::runtime_error("emitValueChange(uint64_t*) not supported for Double");
 	}
 
@@ -304,15 +302,13 @@ class VariableInfoScalarInt {
 public:
 	VariableInfoScalarInt(VariableInfo &info_) : info(info_) {}
 
-private:
+public:
 	inline size_t addedSize(EncodingType encoding) const {
 		return kEmitTimeIndexAndEncodingSize + sizeof(T) * BitPerEncodedBit(encoding);
 	}
 
 	// The returning address points to the first byte of the value
-	// .first: its pointer to the first byte of the value
-	// .second: size of the time index+encoding type+value
-	inline std::pair<EmitWriterHelper, size_t> emitValueChangeCommonPart(
+	inline EmitWriterHelper emitValueChangeCommonPart(
 		uint64_t current_time_index, EncodingType encoding
 	) {
 		if (current_time_index + 1 == 0) {
@@ -325,7 +321,7 @@ private:
 		info.add_size(added_size);
 		EmitWriterHelper wh(info.data_ptr() + old_size);
 		wh.writeTimeIndexAndEncoding(current_time_index, encoding);
-		return std::make_pair(wh, added_size);
+		return wh;
 	}
 
 public:
@@ -335,20 +331,13 @@ public:
 		wh.writeTimeIndexAndEncoding(0, EncodingType::VERILOG).write(T(0)).write(T(-1));
 	}
 
-	uint64_t emitValueChange(uint64_t current_time_index, const uint64_t val) {
-		auto wh_added = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+	void emitValueChange(uint64_t current_time_index, const uint64_t val) {
+		auto wh = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
 		wh.template write<T>(val);
-		return added_size;
 	}
 
-	uint64_t emitValueChange(
-		uint64_t current_time_index, const uint32_t *val, EncodingType encoding
-	) {
-		auto wh_added = emitValueChangeCommonPart(current_time_index, encoding);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+	void emitValueChange(uint64_t current_time_index, const uint32_t *val, EncodingType encoding) {
+		auto wh = emitValueChangeCommonPart(current_time_index, encoding);
 		for (unsigned i = 0; i < BitPerEncodedBit(encoding); ++i) {
 			// C++17: replace this with if constexpr
 			if (sizeof(T) == 8) {
@@ -362,19 +351,13 @@ public:
 				val += 1;
 			}
 		}
-		return added_size;
 	}
 
-	uint64_t emitValueChange(
-		uint64_t current_time_index, const uint64_t *val, EncodingType encoding
-	) {
-		auto wh_added = emitValueChangeCommonPart(current_time_index, encoding);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+	void emitValueChange(uint64_t current_time_index, const uint64_t *val, EncodingType encoding) {
+		auto wh = emitValueChangeCommonPart(current_time_index, encoding);
 		for (unsigned i = 0; i < BitPerEncodedBit(encoding); ++i) {
 			wh.template write<T>(val[i]);
 		}
-		return added_size;
 	}
 
 	void dumpInitialBits(std::vector<uint8_t> &buf) const {
@@ -509,7 +492,7 @@ class VariableInfoLongInt {
 public:
 	VariableInfoLongInt(VariableInfo &info_) : info(info_) {}
 
-private:
+public:
 	inline size_t addedSize(EncodingType encoding) const {
 		return (
 			kEmitTimeIndexAndEncodingSize +
@@ -517,7 +500,7 @@ private:
 		);
 	}
 
-	inline std::pair<EmitWriterHelper, size_t> emitValueChangeCommonPart(
+	inline EmitWriterHelper emitValueChangeCommonPart(
 		uint64_t current_time_index, EncodingType encoding
 	) {
 		if (current_time_index + 1 == 0) {
@@ -529,7 +512,7 @@ private:
 
 		EmitWriterHelper wh(info.data_ptr() + old_size);
 		wh.writeTimeIndexAndEncoding(current_time_index, encoding);
-		return std::make_pair(wh, added_size);
+		return wh;
 	}
 
 public:
@@ -543,24 +526,17 @@ public:
 			.fill(uint64_t(-1), nw);
 	}
 
-	uint64_t emitValueChange(uint64_t current_time_index, const uint64_t val) {
+	void emitValueChange(uint64_t current_time_index, const uint64_t val) {
 		const unsigned nw = num_words();
-		auto wh_added = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+		auto wh = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
 		wh.write(val).fill(uint64_t(0), nw - 1);
-		return added_size;
 	}
 
-	uint64_t emitValueChange(
-		uint64_t current_time_index, const uint32_t *val, EncodingType encoding
-	) {
+	void emitValueChange(uint64_t current_time_index, const uint32_t *val, EncodingType encoding) {
 		const unsigned nw32 = (info.bitwidth() + 31) / 32;
 		const unsigned bpb = BitPerEncodedBit(encoding);
 
-		auto wh_added = emitValueChangeCommonPart(current_time_index, encoding);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+		auto wh = emitValueChangeCommonPart(current_time_index, encoding);
 
 		for (unsigned i = 0; i < bpb; ++i) {
 			for (unsigned j = 0; j < nw32 / 2; ++j) {
@@ -576,17 +552,12 @@ public:
 				val += 1;
 			}
 		}
-		return added_size;
 	}
 
-	uint64_t emitValueChange(
-		uint64_t current_time_index, const uint64_t *val, EncodingType encoding
-	) {
+	void emitValueChange(uint64_t current_time_index, const uint64_t *val, EncodingType encoding) {
 		const unsigned nw_encoded = num_words() * BitPerEncodedBit(encoding);
-		auto wh_added = emitValueChangeCommonPart(current_time_index, encoding);
-		auto wh = wh_added.first;
+		auto wh = emitValueChangeCommonPart(current_time_index, encoding);
 		wh.write(val, nw_encoded);
-		return wh_added.second;
 	}
 
 	void dumpInitialBits(std::vector<uint8_t> &buf) const {
@@ -736,37 +707,33 @@ auto VariableInfo::DispatchHelper(Callable &&callable, Args &&...args) const {
 
 inline VariableInfo::VariableInfo(uint16_t bitwidth_, bool is_real_) {
 	BuildMisc(bitwidth_, is_real_);
-	DispatchHelper([this](auto obj) {
-		obj.construct();
-		last_written_bytes(size());
-	});
+	DispatchHelper([](auto obj) { obj.construct(); });
+	last_written_encode_type(EncodingType::BINARY);
 }
 
 inline uint32_t VariableInfo::emitValueChange(uint64_t current_time_index, const uint64_t val) {
-	const auto last_written_bytes_ =
-		DispatchHelper([=](auto obj) { return obj.emitValueChange(current_time_index, val); });
-	last_written_bytes(last_written_bytes_);
-	return last_written_bytes_;
+	const auto old_size = size();
+	DispatchHelper([=](auto obj) { obj.emitValueChange(current_time_index, val); });
+	last_written_encode_type(EncodingType::BINARY);
+	return size() - old_size;
 }
 
 inline uint32_t VariableInfo::emitValueChange(
 	uint64_t current_time_index, const uint32_t *val, EncodingType encoding
 ) {
-	const auto last_written_bytes_ = DispatchHelper([=](auto obj) {
-		return obj.emitValueChange(current_time_index, val, encoding);
-	});
-	last_written_bytes(last_written_bytes_);
-	return last_written_bytes_;
+	const auto old_size = size();
+	DispatchHelper([=](auto obj) { obj.emitValueChange(current_time_index, val, encoding); });
+	last_written_encode_type(encoding);
+	return size() - old_size;
 }
 
 inline uint32_t VariableInfo::emitValueChange(
 	uint64_t current_time_index, const uint64_t *val, EncodingType encoding
 ) {
-	const auto last_written_bytes_ = DispatchHelper([=](auto obj) {
-		return obj.emitValueChange(current_time_index, val, encoding);
-	});
-	last_written_bytes(last_written_bytes_);
-	return last_written_bytes_;
+	const auto old_size = size();
+	DispatchHelper([=](auto obj) { obj.emitValueChange(current_time_index, val, encoding); });
+	last_written_encode_type(encoding);
+	return size() - old_size;
 }
 
 inline void VariableInfo::dumpInitialBits(std::vector<uint8_t> &buf) const {
@@ -775,6 +742,11 @@ inline void VariableInfo::dumpInitialBits(std::vector<uint8_t> &buf) const {
 
 inline void VariableInfo::dumpValueChanges(std::vector<uint8_t> &buf) const {
 	DispatchHelper([&](auto obj) { obj.dumpValueChanges(buf); });
+}
+
+inline uint64_t VariableInfo::last_written_bytes() const {
+	const auto encoding = last_written_encode_type();
+	return DispatchHelper([encoding](auto obj) { return obj.addedSize(encoding); });
 }
 
 }  // namespace fst
