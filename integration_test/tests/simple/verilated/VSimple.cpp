@@ -12,6 +12,10 @@ VSimple::VSimple(VerilatedContext* _vcontextp__, const char* _vcname__)
     , vlSymsp{new VSimple__Syms(contextp(), _vcname__, this)}
     , clk{vlSymsp->TOP.clk}
     , rst_n{vlSymsp->TOP.rst_n}
+    , counter_add_enum_version{vlSymsp->TOP.counter_add_enum_version}
+    , counter_add{vlSymsp->TOP.counter_add}
+    , counter_shift{vlSymsp->TOP.counter_shift}
+    , super_long{vlSymsp->TOP.super_long}
     , rootp{&(vlSymsp->TOP)}
 {
     // Register model with the context

@@ -1,10 +1,5 @@
-// SPDX-FileCopyrightText: 2025 Yu-Sheng Lin <johnjohnlys@gmail.com>
+// SPDX-FileCopyrightText: 2025-2026 Yu-Sheng Lin <johnjohnlys@gmail.com>
 // SPDX-License-Identifier: MIT
-module Simple (
-  // input
-  input clk,
-  input rst_n
-);
 
 // define a 2b enum named CounterAdd
 typedef enum logic [1:0] {
@@ -14,10 +9,18 @@ typedef enum logic [1:0] {
   THREE = 2'b11
 } counter_add_e;
 
-counter_add_e counter_add_enum_version;
+module Simple (
+  // input
+  input clk,
+  input rst_n,
+  output counter_add_e counter_add_enum_version,
+  output logic [1:0] counter_add,
+  output logic [126:0] counter_shift,
+  output logic [6999:0] super_long
+);
+
 assign counter_add_enum_version = counter_add_e'(counter_add);
 
-logic [1:0] counter_add;
 always_ff @(posedge clk or negedge rst_n) begin
   if (!rst_n) begin
     counter_add <= 2'b00;
@@ -26,7 +29,6 @@ always_ff @(posedge clk or negedge rst_n) begin
   end
 end
 
-logic [126:0] counter_shift;
 always_ff @(posedge clk or negedge rst_n) begin
   if (!rst_n) begin
     counter_shift <= 127'b0;
@@ -34,5 +36,7 @@ always_ff @(posedge clk or negedge rst_n) begin
     counter_shift <= {counter_shift[124:0], 2'b11};
   end
 end
+
+assign super_long = {7000{counter_add[1]}};
 
 endmodule

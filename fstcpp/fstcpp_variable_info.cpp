@@ -29,8 +29,8 @@ void VariableInfo::reallocate(uint64_t new_size) {
 	}
 	data = new_data;
 	// Update capacity_log2
-	const uint64_t mask = ~(uint64_t(0x3f) << 25);
-	misc = (misc & mask) | (new_capacity_log2 << 25);
+	const uint32_t mask = ~(uint32_t(0x3f) << 26);
+	misc = (misc & mask) | (new_capacity_log2 << 26);
 }
 
 }  // namespace fst
