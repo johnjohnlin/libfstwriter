@@ -4,6 +4,7 @@
 #include "VSimple__pch.h"
 #include "VSimple.h"
 #include "VSimple___024root.h"
+#include "VSimple___024unit.h"
 
 // FUNCTIONS
 VSimple__Syms::~VSimple__Syms()
@@ -18,7 +19,7 @@ VSimple__Syms::VSimple__Syms(VerilatedContext* contextp, const char* namep, VSim
     , TOP{this, namep}
 {
     // Check resources
-    Verilated::stackCheck(158);
+    Verilated::stackCheck(224);
     // Configure time unit / time precision
     _vm_contextp__->timeunit(-12);
     _vm_contextp__->timeprecision(-12);

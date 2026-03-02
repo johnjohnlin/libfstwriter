@@ -9,7 +9,7 @@ void VSimple___024root__traceDeclTypesSub0(VerilatedFst* tracep) {
         = {"ZERO", "ONE", "TWO", "THREE"};
         const char* __VenumItemValues[]
         = {"0", "1", "10", "11"};
-        tracep->declDTypeEnum(1, "Simple.counter_add_e", 4, 2, __VenumItemNames, __VenumItemValues);
+        tracep->declDTypeEnum(1, "$unit::counter_add_e", 4, 2, __VenumItemNames, __VenumItemValues);
     }
 }
 
