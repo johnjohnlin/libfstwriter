@@ -178,11 +178,11 @@ namespace detail {
 
 constexpr size_t kEmitTimeIndexAndEncodingSize = sizeof(uint64_t) + sizeof(fst::EncodingType);
 
-// emitReaderHelper and EmitWriterHelper are very optimized for emit functions
+// EmitReaderHelper and EmitWriterHelper are very optimized for emit functions
 // User must ensure the pointer points to the valid memory region
-struct emitReaderHelper {
+struct EmitReaderHelper {
 	const uint8_t *ptr;
-	emitReaderHelper(const uint8_t *ptr_) : ptr(ptr_) {}
+	EmitReaderHelper(const uint8_t *ptr_) : ptr(ptr_) {}
 
 	std::pair<uint64_t, fst::EncodingType> readTimeIndexAndEncoding() {
 		const auto time_index = read<uint64_t>();
@@ -302,7 +302,7 @@ public:
 
 	void dumpInitialBits(std::vector<uint8_t> &buf) const {
 		FST_DCHECK_GT(info.size(), kEmitTimeIndexAndEncodingSize);
-		emitReaderHelper rh(info.data_ptr());
+		EmitReaderHelper rh(info.data_ptr());
 		StreamVectorWriteHelper wh(buf);
 		(void)rh.readTimeIndexAndEncoding();
 		auto v = rh.read<double>();
@@ -311,7 +311,7 @@ public:
 
 	void dumpValueChanges(std::vector<uint8_t> &buf) const {
 		StreamVectorWriteHelper wh(buf);
-		emitReaderHelper rh(info.data_ptr());
+		EmitReaderHelper rh(info.data_ptr());
 		const uint8_t *tail = info.data_ptr() + info.size();
 
 		bool first = true;
@@ -405,7 +405,7 @@ public:
 	void dumpInitialBits(std::vector<uint8_t> &buf) const {
 		// FST requires initial bits present
 		FST_DCHECK_GT(info.size(), kEmitTimeIndexAndEncodingSize);
-		emitReaderHelper rh(info.data_ptr());
+		EmitReaderHelper rh(info.data_ptr());
 		const auto time_index_enc = rh.readTimeIndexAndEncoding();
 		const auto enc = time_index_enc.second;
 		const auto bitwidth = info.bitwidth();
@@ -453,7 +453,7 @@ public:
 
 	void dumpValueChanges(std::vector<uint8_t> &buf) const {
 		StreamVectorWriteHelper h(buf);
-		emitReaderHelper rh(info.data_ptr());
+		EmitReaderHelper rh(info.data_ptr());
 		const uint8_t *tail = info.data_ptr() + info.size();
 		const auto bitwidth = info.bitwidth();
 		bool first = true;
@@ -604,7 +604,7 @@ public:
 
 	void dumpInitialBits(std::vector<uint8_t> &buf) const {
 		FST_DCHECK_GT(info.size(), kEmitTimeIndexAndEncodingSize);
-		emitReaderHelper rh(info.data_ptr());
+		EmitReaderHelper rh(info.data_ptr());
 		const auto time_index_enc = rh.readTimeIndexAndEncoding();
 		const auto enc = time_index_enc.second;
 		const unsigned nw = num_words();
@@ -663,7 +663,7 @@ public:
 
 	void dumpValueChanges(std::vector<uint8_t> &buf) const {
 		StreamVectorWriteHelper h(buf);
-		emitReaderHelper rh(info.data_ptr());
+		EmitReaderHelper rh(info.data_ptr());
 		const uint8_t *tail = info.data_ptr() + info.size();
 		const unsigned nw = num_words();
 		const unsigned bitwidth = info.bitwidth();  // Local copy for lambda capture/usage if needed
