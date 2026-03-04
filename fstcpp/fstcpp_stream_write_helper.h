@@ -181,33 +181,33 @@ struct StreamWriteHelper {
 	// (1)
 	// std::streamoff diff;
 	// h
-	// .BeginOffset(diff)
+	// .beginOffset(diff)
 	// .write(...)
 	// ... do other stuff ...
-	// .EndOffset(&diff); <-- diff will be set to the number of bytes written
+	// .endOffset(&diff); <-- diff will be set to the number of bytes written
 	// (2)
 	// std::streamoff pos, diff;
 	// h
-	// .BeginOffset(pos)
+	// .beginOffset(pos)
 	// .write(...)
 	// ... do other stuff ...
-	// .EndOffset(&diff, pos); <-- diff will be set to the number of bytes written
+	// .endOffset(&diff, pos); <-- diff will be set to the number of bytes written
 
 	// The API uses pointer on purpose to prevent you pass (pos, diff) as arguments
-	// to EndOffset(), which is a common mistake.
+	// to endOffset(), which is a common mistake.
 
-	StreamWriteHelper &BeginOffset(std::streamoff &pos) {
+	StreamWriteHelper &beginOffset(std::streamoff &pos) {
 		pos = os->tellp();
 		return *this;
 	}
 
-	StreamWriteHelper &EndOffset(std::streamoff *diff) {
+	StreamWriteHelper &endOffset(std::streamoff *diff) {
 		// diff shall store previous position before calling this function
 		*diff = os->tellp() - *diff;
 		return *this;
 	}
 
-	StreamWriteHelper &EndOffset(std::streamoff *diff, std::streamoff pos) {
+	StreamWriteHelper &endOffset(std::streamoff *diff, std::streamoff pos) {
 		*diff = os->tellp() - pos;
 		return *this;
 	}

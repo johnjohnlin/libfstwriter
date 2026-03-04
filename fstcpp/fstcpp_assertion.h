@@ -52,9 +52,9 @@
 	}
 
 #define FST_CHECK_GE(a, b)                           \
-	if ((a) < (b)) [[unlikely]] {                   \
+	if ((a) < (b)) [[unlikely]] {                    \
 		std::ostringstream oss;                      \
-		oss << "FST_CHECK_GE failed: " #a " < " #b; \
+		oss << "FST_CHECK_GE failed: " #a " < " #b;  \
 		oss << " (" << (a) << " vs. " << (b) << ")"; \
 		const auto e = oss.str();                    \
 		std::cerr << e << std::endl;                 \
@@ -72,9 +72,9 @@
 	}
 
 #define FST_CHECK_LE(a, b)                           \
-	if ((a) > (b)) [[unlikely]] {                   \
+	if ((a) > (b)) [[unlikely]] {                    \
 		std::ostringstream oss;                      \
-		oss << "FST_CHECK_LE failed: " #a " > " #b; \
+		oss << "FST_CHECK_LE failed: " #a " > " #b;  \
 		oss << " (" << (a) << " vs. " << (b) << ")"; \
 		const auto e = oss.str();                    \
 		std::cerr << e << std::endl;                 \

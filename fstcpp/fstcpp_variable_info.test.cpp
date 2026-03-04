@@ -28,7 +28,7 @@ constexpr unsigned kDontCareBitWidth = 1234;
 TEST(VariableInfoTest, writeInitialBits_ScalarInt) {
 	VariableInfo vi(4);
 	vi.emitValueChange(0, 0b1010);
-	vi.KeepOnlyTheLatestValue();
+	vi.keepOnlyTheLatestValue();
 	vector<uint8_t> buf;
 	vi.dumpInitialBits(buf);
 	EXPECT_EQ(V2S(buf), "1010");
@@ -37,7 +37,7 @@ TEST(VariableInfoTest, writeInitialBits_ScalarInt) {
 TEST(VariableInfoTest, writeInitialBits_LongInt) {
 	VariableInfo vi(70);
 	vi.emitValueChange(0, (1ULL << 63) | 1);
-	vi.KeepOnlyTheLatestValue();
+	vi.keepOnlyTheLatestValue();
 	vector<uint8_t> buf;
 	vi.dumpInitialBits(buf);
 	// Should be 70 bits: 1 at bit 63 and bit 0, rest are 0
@@ -48,7 +48,7 @@ TEST(VariableInfoTest, writeInitialBits_LongInt) {
 TEST(VariableInfoTest, writeInitialBits_Double) {
 	VariableInfo vi(kDontCareBitWidth, true);
 	vi.emitValueChange(0, 0x3ff0000000000000ULL);  // 1.0 in IEEE754
-	vi.KeepOnlyTheLatestValue();
+	vi.keepOnlyTheLatestValue();
 	vector<uint8_t> buf;
 	vi.dumpInitialBits(buf);
 	double val;

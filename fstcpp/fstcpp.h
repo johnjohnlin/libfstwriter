@@ -58,7 +58,7 @@ enum class EncodingType : uint8_t {
 	VHDL = 2,     // 4 bits per bit to represent H,U,W,L,-,?
 };
 [[maybe_unused]]
-static inline constexpr unsigned BitPerEncodedBit(EncodingType type) {
+static inline constexpr unsigned bitPerEncodedBit(EncodingType type) {
 	return 1 << static_cast<uint8_t>(type);
 }
 [[maybe_unused]]
