@@ -30,14 +30,14 @@ protected:
 	// For testing set(Up)Scope/createVar
 	// We call Writer API and get the buffer content
 	// without inspecting the internal state of Writer
-	static const string GetHierarchyBuffer(Writer &Writer) {
+	static const string getHierarchyBuffer(Writer &Writer) {
 		return string(
 			reinterpret_cast<char *>(Writer.hierarchy_buffer_.data()),
 			Writer.hierarchy_buffer_.size()
 		);
 	}
 
-	static const string GetGeometryBuffer(Writer &Writer) {
+	static const string getGeometryBuffer(Writer &Writer) {
 		return string(
 			reinterpret_cast<char *>(Writer.geometry_buffer_.data()), Writer.geometry_buffer_.size()
 		);
@@ -76,7 +76,7 @@ TEST_F(WriterTest, createVar) {
 	);
 
 	// Get the hierarchy buffer content
-	string buf = GetHierarchyBuffer(Writer);
+	string buf = getHierarchyBuffer(Writer);
 	// expected: Type, Direction, Name, bitwidth, Alias Handle
 	// FIXME: in fstapi.c:2598 it writes len, zero, zero for normal variable this may be a bug
 	string expected =
@@ -113,7 +113,7 @@ TEST_F(WriterTest, createVarAlias) {
 	);
 
 	// Get the hierarchy buffer content
-	string buf = GetHierarchyBuffer(Writer);
+	string buf = getHierarchyBuffer(Writer);
 	// expected: Type, Direction, Name, bitwidth, Alias Handle
 	// FIXME: in fstapi.c:2598 it writes len, zero, zero for normal variable this may be a bug
 	string expected =
@@ -140,7 +140,7 @@ TEST_F(WriterTest, createAliasOutOfRange) {
 	);
 
 	// Get the hierarchy buffer content
-	string buf = GetHierarchyBuffer(Writer);
+	string buf = getHierarchyBuffer(Writer);
 	// expected: Type, Direction, Name, bitwidth, Alias Handle
 	// FIXME: in fstapi.c:2598 it writes len, zero, zero for normal variable this may be a bug
 	string expected = "\x10\x01mode\x00\x10\x00"s;
@@ -159,7 +159,7 @@ TEST_F(WriterTest, Scope) {
 	Writer.upscope();
 
 	// Get the hierarchy buffer content
-	string buf = GetHierarchyBuffer(Writer);
+	string buf = getHierarchyBuffer(Writer);
 	// expected: Scope Type, Name, component, Upscope
 	string expected =
 		"\xfe\x00top\x00"
@@ -178,7 +178,7 @@ TEST_F(WriterTest, createEnumTable_NoEscape_Padding) {
 		{{"A", "0"}, {"B", "001"}, {"C", "1101"}}
 	);
 	// Get the hierarchy buffer content
-	string buf = GetHierarchyBuffer(Writer);
+	string buf = getHierarchyBuffer(Writer);
 	string expected = (
 		// AttrBegin->Misc->EnumTable
 		"\xfc\x00\x07"
@@ -219,7 +219,7 @@ TEST_F(WriterTest, createEnumTable_Escape_NoPadding) {
 	);
 
 	// Get the hierarchy buffer content
-	string buf = GetHierarchyBuffer(Writer);
+	string buf = getHierarchyBuffer(Writer);
 	string expected = (
 		// AttrBegin->Misc->EnumTable
 		"\xfc\x00\x07"
@@ -242,7 +242,7 @@ TEST_F(WriterTest, createEnumTableRef) {
 	Writer Writer;
 	Writer.setWriterPackType(WriterPackType::NO_COMPRESSION);
 	Writer.emitEnumTableRef((0x12 << 7) | 0x34);
-	string buf = GetHierarchyBuffer(Writer);
+	string buf = getHierarchyBuffer(Writer);
 	string expected = (
 		// AttrBegin->Misc->EnumTableRef
 		"\xFC\x00\x07"
@@ -270,7 +270,7 @@ TEST_F(WriterTest, createVarVcdReal) {
 	);
 
 	// Get the hierarchy buffer content
-	string buf = GetHierarchyBuffer(Writer);
+	string buf = getHierarchyBuffer(Writer);
 	// For eVcdReal, bitwidth should be encoded as 8 bytes (64 bits)
 	// Type: 0x1a, Direction: 0x01, Name: "real_val", bitwidth: 0x08,  Alias: 0x00
 	string expected = "\x03\x01real_val\x00\x08\x00"s;
@@ -290,7 +290,7 @@ TEST_F(WriterTest, GeometryBufferNormalVar) {
 		),
 		1u
 	);
-	string buf = GetGeometryBuffer(Writer);
+	string buf = getGeometryBuffer(Writer);
 	string expected = "\x0f"s;
 	EXPECT_EQ(buf, expected);
 }
@@ -308,7 +308,7 @@ TEST_F(WriterTest, GeometryBufferRealVar) {
 		),
 		1u
 	);
-	string buf = GetGeometryBuffer(Writer);
+	string buf = getGeometryBuffer(Writer);
 	string expected = "\x00"s;
 	EXPECT_EQ(buf, expected);
 }
@@ -326,7 +326,7 @@ TEST_F(WriterTest, GeometryBufferZerobitwidthVar) {
 		),
 		1u
 	);
-	string buf = GetGeometryBuffer(Writer);
+	string buf = getGeometryBuffer(Writer);
 	// leb128 encoding of 0xffffffff
 	string expected = "\xFF\xFF\xFF\xFF\x0F"s;
 	EXPECT_EQ(buf, expected);

@@ -31,6 +31,10 @@ class alignas(VL_CACHE_LINE_BYTES) VSimple VL_NOT_FINAL : public VerilatedModel 
     // propagate new values into/out from the Verilated model.
     VL_IN8(&clk,0,0);
     VL_IN8(&rst_n,0,0);
+    VL_OUT8(&counter_add_enum_version,1,0);
+    VL_OUT8(&counter_add,1,0);
+    VL_OUTW(&counter_shift,126,0,4);
+    VL_OUTW(&super_long,6999,0,219);
 
     // CELLS
     // Public to allow access to /* verilator public */ items.

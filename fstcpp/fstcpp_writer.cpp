@@ -54,7 +54,7 @@ ValueChangeData::~ValueChangeData() = default;
 
 void ValueChangeData::keepOnlyTheLatestValue() {
 	for (auto &v : variable_infos) {
-		v.KeepOnlyTheLatestValue();
+		v.keepOnlyTheLatestValue();
 	}
 	FST_CHECK(not timestamps.empty());
 	timestamps.front() = timestamps.back();
@@ -124,6 +124,7 @@ Handle Writer::createVar(
 	Handle alias_handle
 ) {
 	FST_CHECK(not hierarchy_finalized_);
+	FST_CHECK_LE(bitwidth, VariableInfo::kMaxSupportedBitwidth);
 	// write hierarchy entry: type, direction, name, length, alias
 	StreamVectorWriteHelper h(hierarchy_buffer_);
 
@@ -541,11 +542,11 @@ uint64_t detail::ValueChangeData::encodePositionsAndwriteUniqueWaveData(
 			written_count++;
 			streamoff bytes_written;
 			h  //
-				.BeginOffset(bytes_written)
+				.beginOffset(bytes_written)
 				// FST spec: 0 means no compression, >0 for the size of the original data
 				.writeLEB128(is_compressed ? data[i].size() : 0)
 				.write(selected_data, selected_size)
-				.EndOffset(&bytes_written);
+				.endOffset(&bytes_written);
 			positions[i] = previous_size;
 			previous_size = bytes_written;
 		}
@@ -626,11 +627,11 @@ void Writer::flushValueChangeDataConstPart_(
 	const auto p_tmp1 = [&]() {
 		streamoff start_pos, memory_usage_pos;
 		h                            //
-			.BeginOffset(start_pos)  // record start position
+			.beginOffset(start_pos)  // record start position
 			.writeBlockHeader(BlockType::WAVE_DATA_VERSION3, 0 /* Length placeholder 0 */)
 			.writeUInt(vcd.timestamps.front())
 			.writeUInt(vcd.timestamps.back())
-			.BeginOffset(memory_usage_pos)  // record memory usage position
+			.beginOffset(memory_usage_pos)  // record memory usage position
 			.writeUInt<uint64_t>(0);        // placeholder for memory usage
 		return make_pair(start_pos, memory_usage_pos);
 	}();
@@ -719,7 +720,7 @@ void Writer::flushValueChangeDataConstPart_(
 	// 6. Patch Block Length and Memory Required
 	streamoff end_pos;
 	h  //
-		.BeginOffset(end_pos)
+		.beginOffset(end_pos)
 		// Patch Block Length (after 1 byte Type)
 		.seek(start_pos + streamoff(1), ios_base::beg)
 		.writeUInt<uint64_t>(end_pos - start_pos - 1)

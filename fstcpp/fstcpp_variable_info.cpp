@@ -18,7 +18,7 @@ constexpr uint64_t VariableInfo::kCapacityBase;
 
 void VariableInfo::reallocate(uint64_t new_size) {
 	// Allocate new memory
-	const uint64_t new_capacity_log2 =
+	const uint32_t new_capacity_log2 =
 		std::max(platform::clog2(new_size), kCapacityBaseShift) - kCapacityBaseShift;
 	uint8_t *new_data = new uint8_t[kCapacityBase << new_capacity_log2];
 	// Copy old data to new memory
@@ -28,9 +28,7 @@ void VariableInfo::reallocate(uint64_t new_size) {
 		delete[] data;
 	}
 	data = new_data;
-	// Update capacity_log2
-	const uint64_t mask = ~(uint64_t(0x3f) << 25);
-	misc = (misc & mask) | (new_capacity_log2 << 25);
+	capacity_log2(new_capacity_log2);
 }
 
 }  // namespace fst

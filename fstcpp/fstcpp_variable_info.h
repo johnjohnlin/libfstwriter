@@ -27,59 +27,99 @@ inline uint64_t clog2(uint64_t x) {
 	return 64 - __builtin_clzll(x - 1);
 }
 
+inline constexpr uint32_t gen_mask_safe(unsigned width) {
+	// works even when width == 32
+	return ((uint32_t(1) << (width - 1)) << 1) - 1;
+}
+
+inline uint32_t read_field(const uint32_t src, unsigned width, unsigned offset) {
+	const uint32_t mask = gen_mask_safe(width);
+	return (src >> offset) & mask;
+}
+
+inline void write_field(uint32_t &dst, const uint32_t src, unsigned width, unsigned offset) {
+	const uint32_t mask = gen_mask_safe(width) << offset;
+	dst = (dst & ~mask) | ((src << offset) & mask);
+}
+
 }  // namespace platform
 
 class VariableInfo final {
 	static constexpr uint64_t kCapacityBaseShift = 5;
 	static constexpr uint64_t kCapacityBase = 1 << kCapacityBaseShift;
 
+	// To maximize cache efficiency, we compact the data members into 16 bytes.
+	// We make use of bitfields to store multiple pieces of information in a single integer.
+	// But standard does not guarantee the layout of bitfields (the `int x : N;` syntax),
+	// so we use helper functions to access bitfields.
+
 	// begin of data members
-	// 1. 8B pointer, its size can be:
+	// 1. 8B pointer (assume 64-bit architecture), its size can be:
 	//   - 0 if data is nullptr
 	//   - `kCapacityBase * pow(2, capacity_log2)` if data is not nullptr
-	//   - (TODO) Always aligned to kCapacityBase (will be changed to 64B)
-	//     so we can use the LSB for capacity_log2
+	//   - If we want more bits, we can use the `kCapacityBaseShift` LSB for other purposes.
 	uint8_t *data = nullptr;
-	// 2. 8B misc:
-	//   - 33b size (TODO: maybe 32b is enough, who needs a single variable
-	//     larger than 4G in a block?)
-	//   - 6b capacity_log2 (offset by -kCapacityBaseShift)
-	//   - 12b last_written_bytes
-	//     (TODO: can be calculated from only EncodingType, which is only 2b)
-	//   - 12b bitwidth
-	//   - 1b is_real
-	uint64_t misc = 0;
+	// 2. 4B size. The same as vector.size(), but we only need 32b.
+	uint32_t size_ = 0;
+	// 3. 4B misc. Highly compacted information for max cache efficiency.
+	//    - 6b capacity_log2
+	//    - 2b last_encoding_type
+	//    - 23b bitwidth
+	//    - 1b is_real
+	static constexpr uint32_t kIsRealWidth = 1;
+	static constexpr uint32_t kBitwidthWidth = 23;
+	static constexpr uint32_t kLastEncodingTypeWidth = 2;
+	static constexpr uint32_t kCapacityLog2Width = 6;
+
+	static constexpr uint32_t kIsRealOffset = 0;
+	static constexpr uint32_t kBitwidthOffset = kIsRealOffset + kIsRealWidth;
+	static constexpr uint32_t kLastEncodingTypeOffset = kBitwidthOffset + kBitwidthWidth;
+	static constexpr uint32_t kCapacityLog2Offset =
+		kLastEncodingTypeOffset + kLastEncodingTypeWidth;
+	uint32_t misc = 0;
 	// end of data members
 
-	inline bool need_reallocate(uint64_t new_size) const {
-		const uint64_t capacity = data == nullptr ? 0 : (kCapacityBase << ((misc >> 25) & 0x3f));
-		return capacity < new_size;
+	void capacity_log2(uint32_t capacity_log2_) {
+		platform::write_field(misc, capacity_log2_, kCapacityLog2Width, kCapacityLog2Offset);
 	}
+	uint32_t capacity() const {
+		if (data == nullptr) {
+			return 0;
+		}
+		return kCapacityBase << platform::read_field(misc, kCapacityLog2Width, kCapacityLog2Offset);
+	}
+
+	inline bool need_reallocate(uint64_t new_size) const { return capacity() < new_size; }
 	// This function is cold, so we don't inline it
 	void reallocate(uint64_t new_size);
 
-	inline void BuildMisc(uint32_t bitwidth_, bool is_real_) {
-		misc = bitwidth_;
-		misc <<= 1;
-		misc |= is_real_;
-	}
-
-	inline void size(uint64_t size_) { misc = (misc << 33 >> 33) | size_ << 33; }
+	inline void size(uint64_t s) { size_ = s; }
 
 public:
-	inline uint64_t size() const { return misc >> 33; }
-	inline uint16_t bitwidth() const { return (misc >> 1) & 0xfff; }
-	inline bool is_real() const { return misc & 1; }
-	inline void last_written_bytes(uint64_t last_written_bytes_) {
-		const uint64_t mask = ~(uint64_t(0xfff) << 13);
-		misc = (misc & mask) | (last_written_bytes_ << 13);
+	static constexpr uint32_t kMaxSupportedBitwidth = 0x7fffff;
+	inline uint64_t size() const { return size_; }
+	inline uint32_t bitwidth() const {
+		return platform::read_field(misc, kBitwidthWidth, kBitwidthOffset);
 	}
-	inline uint64_t last_written_bytes() const { return (misc >> 13) & 0xfff; }
+	inline bool is_real() const {
+		return bool(platform::read_field(misc, kIsRealWidth, kIsRealOffset));
+	}
+	inline void last_written_encode_type(EncodingType encoding_) {
+		platform::write_field(
+			misc, static_cast<uint32_t>(encoding_), kLastEncodingTypeWidth, kLastEncodingTypeOffset
+		);
+	}
+	inline EncodingType last_written_encode_type() const {
+		return static_cast<EncodingType>(
+			platform::read_field(misc, kLastEncodingTypeWidth, kLastEncodingTypeOffset)
+		);
+	}
+	uint64_t last_written_bytes() const;
 
 	template <typename Callable, typename... Args>
-	auto DispatchHelper(Callable &&callable, Args &&...args) const;
+	auto dispatchHelper(Callable &&callable, Args &&...args) const;
 
-	VariableInfo(uint16_t bitwidth_, bool is_real_ = false);
+	VariableInfo(uint32_t bitwidth_, bool is_real_ = false);
 	~VariableInfo() {
 		if (data_ptr() != nullptr) {
 			// don't delete data directly for better abstraction
@@ -92,6 +132,7 @@ public:
 		data = rhs.data;
 		rhs.data = nullptr;
 		misc = rhs.misc;
+		size_ = rhs.size_;
 		// rhs.misc = 0;
 	}
 
@@ -103,7 +144,7 @@ public:
 		uint64_t current_time_index, const uint64_t *val, EncodingType encoding
 	);
 
-	void KeepOnlyTheLatestValue() {
+	void keepOnlyTheLatestValue() {
 		const auto last_written_bytes_ = last_written_bytes();
 		const auto data_ptr_ = data_ptr();
 		std::copy_n(data_ptr_ + size() - last_written_bytes_, last_written_bytes_, data_ptr_);
@@ -127,7 +168,11 @@ public:
 	void add_size(size_t added_size) { resize(size() + added_size); }
 	uint8_t *data_ptr() { return data; }
 };
-static_assert(sizeof(VariableInfo) == 16, "VariableInfoBase should be small");
+static_assert(
+	sizeof(VariableInfo) != 12,
+	"We don't support 32-bit architecture, comment out the assertions and take the risk"
+);
+static_assert(sizeof(VariableInfo) == 16, "VariableInfo should be small");
 
 namespace detail {
 
@@ -139,14 +184,14 @@ struct EmitReaderHelper {
 	const uint8_t *ptr;
 	EmitReaderHelper(const uint8_t *ptr_) : ptr(ptr_) {}
 
-	std::pair<uint64_t, fst::EncodingType> ReadTimeIndexAndEncoding() {
-		const auto time_index = Read<uint64_t>();
-		const auto encoding = Read<fst::EncodingType>();
+	std::pair<uint64_t, fst::EncodingType> readTimeIndexAndEncoding() {
+		const auto time_index = read<uint64_t>();
+		const auto encoding = read<fst::EncodingType>();
 		return std::make_pair(time_index, encoding);
 	}
 
 	template <typename T>
-	T Read() {
+	T read() {
 		const size_t s = sizeof(T);
 		T u;
 		std::memcpy(&u, ptr, s);
@@ -209,54 +254,49 @@ class VariableInfoDouble {
 public:
 	VariableInfoDouble(VariableInfo &info_) : info(info_) {}
 
-private:
-	inline size_t addedSize(EncodingType encoding) const {
+public:
+	inline size_t computeBytesNeeded(EncodingType encoding) const {
 		(void)encoding;
 		return kEmitTimeIndexAndEncodingSize + sizeof(double);
 	}
 
-	// first: its pointer to the first byte of the value
-	// second: size of the time index+encoding type+value
-	inline std::pair<EmitWriterHelper, size_t> emitValueChangeCommonPart(
+	inline EmitWriterHelper emitValueChangeCommonPart(
 		uint64_t current_time_index, EncodingType encoding
 	) {
 		if (current_time_index + 1 == 0) {
 			info.resize(0);
 		}
 		// For Double, value is always 8 bytes (sizeof(double) or uint64_t)
-		const size_t added_size = addedSize(encoding);
+		const size_t added_size = computeBytesNeeded(encoding);
 		const size_t old_size = info.size();
 		info.add_size(added_size);
 
 		EmitWriterHelper wh(info.data_ptr() + old_size);
 		wh.writeTimeIndexAndEncoding(current_time_index, encoding);
-		return std::make_pair(wh, added_size);
+		return wh;
 	}
 
 public:
 	void construct() {
-		const size_t needed = addedSize(EncodingType::BINARY);
+		const size_t needed = computeBytesNeeded(EncodingType::BINARY);
 		info.resize(needed);
 		EmitWriterHelper wh(info.data_ptr());
 		wh.writeTimeIndexAndEncoding(0, EncodingType::BINARY).write<double>(0.0);
 	}
 
-	uint64_t emitValueChange(uint64_t current_time_index, const uint64_t val) {
-		auto wh_added = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+	void emitValueChange(uint64_t current_time_index, const uint64_t val) {
+		auto wh = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
 		// Note, do not use write<double> here since the uint64_t is
 		// already bit_cast'ed from double
 		wh.write<uint64_t>(val);
-		return added_size;
 	}
 
 	// Double variables should not use these array-based emitValueChange overloads.
-	// We implement them to satisfy the VairableInfo::DispatchHelper template instantiation.
-	uint64_t emitValueChange(uint64_t, const uint32_t *, EncodingType) {
+	// We implement them to satisfy the VairableInfo::dispatchHelper template instantiation.
+	void emitValueChange(uint64_t, const uint32_t *, EncodingType) {
 		throw std::runtime_error("emitValueChange(uint32_t*) not supported for Double");
 	}
-	uint64_t emitValueChange(uint64_t, const uint64_t *, EncodingType) {
+	void emitValueChange(uint64_t, const uint64_t *, EncodingType) {
 		throw std::runtime_error("emitValueChange(uint64_t*) not supported for Double");
 	}
 
@@ -264,8 +304,8 @@ public:
 		FST_DCHECK_GT(info.size(), kEmitTimeIndexAndEncodingSize);
 		EmitReaderHelper rh(info.data_ptr());
 		StreamVectorWriteHelper wh(buf);
-		(void)rh.ReadTimeIndexAndEncoding();
-		auto v = rh.Read<double>();
+		(void)rh.readTimeIndexAndEncoding();
+		auto v = rh.read<double>();
 		wh.write<double>(v);
 	}
 
@@ -280,8 +320,8 @@ public:
 		while (true) {
 			if (rh.ptr == tail) break;
 			FST_CHECK_GT(tail, rh.ptr);
-			const auto time_index = rh.Read<uint64_t>();
-			const auto enc = rh.Read<EncodingType>();
+			const auto time_index = rh.read<uint64_t>();
+			const auto enc = rh.read<EncodingType>();
 			const auto num_byte = sizeof(double);
 			if (first) {
 				// Note: [0] is initial value, which is already dumped in dumpInitialBits()
@@ -304,15 +344,13 @@ class VariableInfoScalarInt {
 public:
 	VariableInfoScalarInt(VariableInfo &info_) : info(info_) {}
 
-private:
-	inline size_t addedSize(EncodingType encoding) const {
-		return kEmitTimeIndexAndEncodingSize + sizeof(T) * BitPerEncodedBit(encoding);
+public:
+	inline size_t computeBytesNeeded(EncodingType encoding) const {
+		return kEmitTimeIndexAndEncodingSize + sizeof(T) * bitPerEncodedBit(encoding);
 	}
 
 	// The returning address points to the first byte of the value
-	// .first: its pointer to the first byte of the value
-	// .second: size of the time index+encoding type+value
-	inline std::pair<EmitWriterHelper, size_t> emitValueChangeCommonPart(
+	inline EmitWriterHelper emitValueChangeCommonPart(
 		uint64_t current_time_index, EncodingType encoding
 	) {
 		if (current_time_index + 1 == 0) {
@@ -320,36 +358,29 @@ private:
 			// and then add the new value
 			info.resize(0);
 		}
-		const size_t added_size = addedSize(encoding);
+		const size_t added_size = computeBytesNeeded(encoding);
 		const size_t old_size = info.size();
 		info.add_size(added_size);
 		EmitWriterHelper wh(info.data_ptr() + old_size);
 		wh.writeTimeIndexAndEncoding(current_time_index, encoding);
-		return std::make_pair(wh, added_size);
+		return wh;
 	}
 
 public:
 	void construct() {
-		info.resize(addedSize(EncodingType::VERILOG));
+		info.resize(computeBytesNeeded(EncodingType::VERILOG));
 		EmitWriterHelper wh(info.data_ptr());
 		wh.writeTimeIndexAndEncoding(0, EncodingType::VERILOG).write(T(0)).write(T(-1));
 	}
 
-	uint64_t emitValueChange(uint64_t current_time_index, const uint64_t val) {
-		auto wh_added = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+	void emitValueChange(uint64_t current_time_index, const uint64_t val) {
+		auto wh = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
 		wh.template write<T>(val);
-		return added_size;
 	}
 
-	uint64_t emitValueChange(
-		uint64_t current_time_index, const uint32_t *val, EncodingType encoding
-	) {
-		auto wh_added = emitValueChangeCommonPart(current_time_index, encoding);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
-		for (unsigned i = 0; i < BitPerEncodedBit(encoding); ++i) {
+	void emitValueChange(uint64_t current_time_index, const uint32_t *val, EncodingType encoding) {
+		auto wh = emitValueChangeCommonPart(current_time_index, encoding);
+		for (unsigned i = 0; i < bitPerEncodedBit(encoding); ++i) {
 			// C++17: replace this with if constexpr
 			if (sizeof(T) == 8) {
 				uint64_t v = val[1];  // high bits
@@ -362,32 +393,26 @@ public:
 				val += 1;
 			}
 		}
-		return added_size;
 	}
 
-	uint64_t emitValueChange(
-		uint64_t current_time_index, const uint64_t *val, EncodingType encoding
-	) {
-		auto wh_added = emitValueChangeCommonPart(current_time_index, encoding);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
-		for (unsigned i = 0; i < BitPerEncodedBit(encoding); ++i) {
+	void emitValueChange(uint64_t current_time_index, const uint64_t *val, EncodingType encoding) {
+		auto wh = emitValueChangeCommonPart(current_time_index, encoding);
+		for (unsigned i = 0; i < bitPerEncodedBit(encoding); ++i) {
 			wh.template write<T>(val[i]);
 		}
-		return added_size;
 	}
 
 	void dumpInitialBits(std::vector<uint8_t> &buf) const {
 		// FST requires initial bits present
 		FST_DCHECK_GT(info.size(), kEmitTimeIndexAndEncodingSize);
 		EmitReaderHelper rh(info.data_ptr());
-		const auto time_index_enc = rh.ReadTimeIndexAndEncoding();
+		const auto time_index_enc = rh.readTimeIndexAndEncoding();
 		const auto enc = time_index_enc.second;
 		const auto bitwidth = info.bitwidth();
 
 		switch (enc) {
 		case EncodingType::BINARY: {
-			auto v0 = rh.Read<T>();
+			auto v0 = rh.read<T>();
 			for (unsigned i = bitwidth; i-- > 0;) {
 				const char c = ((v0 >> i) & T(1)) ? '1' : '0';
 				buf.push_back(c);
@@ -396,8 +421,8 @@ public:
 		}
 
 		case EncodingType::VERILOG: {
-			auto v0 = rh.Read<T>();
-			auto v1 = rh.Read<T>();
+			auto v0 = rh.read<T>();
+			auto v1 = rh.read<T>();
 			for (unsigned i = bitwidth; i-- > 0;) {
 				const T b1 = ((v1 >> i) & T(1));
 				const T b0 = ((v0 >> i) & T(1));
@@ -410,9 +435,9 @@ public:
 		// LCOV_EXCL_START
 		default:
 		case EncodingType::VHDL: {
-			auto v0 = rh.Read<T>();
-			auto v1 = rh.Read<T>();
-			auto v2 = rh.Read<T>();
+			auto v0 = rh.read<T>();
+			auto v1 = rh.read<T>();
+			auto v2 = rh.read<T>();
 			for (unsigned i = bitwidth; i-- > 0;) {
 				const T b2 = ((v2 >> i) & T(1));
 				const T b1 = ((v1 >> i) & T(1));
@@ -439,9 +464,9 @@ public:
 					break;
 				}
 				FST_DCHECK_GT(tail, rh.ptr);
-				const auto time_index = rh.Read<uint64_t>();
-				const auto enc = rh.Read<EncodingType>();
-				const auto num_element = BitPerEncodedBit(enc);
+				const auto time_index = rh.read<uint64_t>();
+				const auto enc = rh.read<EncodingType>();
+				const auto num_element = bitPerEncodedBit(enc);
 				const auto num_byte = num_element * sizeof(T);
 				if (first) {
 					// Note: [0] is initial value, which is already dumped in dumpInitialBits()
@@ -481,9 +506,9 @@ public:
 					break;
 				}
 				FST_CHECK_GT(tail, rh.ptr);
-				const auto time_index = rh.Read<uint64_t>();
-				const auto enc = rh.Read<EncodingType>();
-				const auto num_element = BitPerEncodedBit(enc);
+				const auto time_index = rh.read<uint64_t>();
+				const auto enc = rh.read<EncodingType>();
+				const auto num_element = bitPerEncodedBit(enc);
 				const auto num_byte = num_element * sizeof(T);
 				if (first) {
 					first = false;
@@ -509,33 +534,33 @@ class VariableInfoLongInt {
 public:
 	VariableInfoLongInt(VariableInfo &info_) : info(info_) {}
 
-private:
-	inline size_t addedSize(EncodingType encoding) const {
+public:
+	inline size_t computeBytesNeeded(EncodingType encoding) const {
 		return (
 			kEmitTimeIndexAndEncodingSize +
-			num_words() * sizeof(uint64_t) * BitPerEncodedBit(encoding)
+			num_words() * sizeof(uint64_t) * bitPerEncodedBit(encoding)
 		);
 	}
 
-	inline std::pair<EmitWriterHelper, size_t> emitValueChangeCommonPart(
+	inline EmitWriterHelper emitValueChangeCommonPart(
 		uint64_t current_time_index, EncodingType encoding
 	) {
 		if (current_time_index + 1 == 0) {
 			info.resize(0);
 		}
-		const size_t added_size = addedSize(encoding);
+		const size_t added_size = computeBytesNeeded(encoding);
 		const size_t old_size = info.size();
 		info.add_size(added_size);
 
 		EmitWriterHelper wh(info.data_ptr() + old_size);
 		wh.writeTimeIndexAndEncoding(current_time_index, encoding);
-		return std::make_pair(wh, added_size);
+		return wh;
 	}
 
 public:
 	void construct() {
 		const size_t nw = num_words();
-		info.resize(addedSize(EncodingType::VERILOG));
+		info.resize(computeBytesNeeded(EncodingType::VERILOG));
 		EmitWriterHelper wh(info.data_ptr());
 		wh  //
 			.writeTimeIndexAndEncoding(0, EncodingType::VERILOG)
@@ -543,24 +568,17 @@ public:
 			.fill(uint64_t(-1), nw);
 	}
 
-	uint64_t emitValueChange(uint64_t current_time_index, const uint64_t val) {
+	void emitValueChange(uint64_t current_time_index, const uint64_t val) {
 		const unsigned nw = num_words();
-		auto wh_added = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+		auto wh = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
 		wh.write(val).fill(uint64_t(0), nw - 1);
-		return added_size;
 	}
 
-	uint64_t emitValueChange(
-		uint64_t current_time_index, const uint32_t *val, EncodingType encoding
-	) {
+	void emitValueChange(uint64_t current_time_index, const uint32_t *val, EncodingType encoding) {
 		const unsigned nw32 = (info.bitwidth() + 31) / 32;
-		const unsigned bpb = BitPerEncodedBit(encoding);
+		const unsigned bpb = bitPerEncodedBit(encoding);
 
-		auto wh_added = emitValueChangeCommonPart(current_time_index, encoding);
-		auto wh = wh_added.first;
-		auto added_size = wh_added.second;
+		auto wh = emitValueChangeCommonPart(current_time_index, encoding);
 
 		for (unsigned i = 0; i < bpb; ++i) {
 			for (unsigned j = 0; j < nw32 / 2; ++j) {
@@ -576,23 +594,18 @@ public:
 				val += 1;
 			}
 		}
-		return added_size;
 	}
 
-	uint64_t emitValueChange(
-		uint64_t current_time_index, const uint64_t *val, EncodingType encoding
-	) {
-		const unsigned nw_encoded = num_words() * BitPerEncodedBit(encoding);
-		auto wh_added = emitValueChangeCommonPart(current_time_index, encoding);
-		auto wh = wh_added.first;
+	void emitValueChange(uint64_t current_time_index, const uint64_t *val, EncodingType encoding) {
+		const unsigned nw_encoded = num_words() * bitPerEncodedBit(encoding);
+		auto wh = emitValueChangeCommonPart(current_time_index, encoding);
 		wh.write(val, nw_encoded);
-		return wh_added.second;
 	}
 
 	void dumpInitialBits(std::vector<uint8_t> &buf) const {
 		FST_DCHECK_GT(info.size(), kEmitTimeIndexAndEncodingSize);
 		EmitReaderHelper rh(info.data_ptr());
-		const auto time_index_enc = rh.ReadTimeIndexAndEncoding();
+		const auto time_index_enc = rh.readTimeIndexAndEncoding();
 		const auto enc = time_index_enc.second;
 		const unsigned nw = num_words();
 		switch (enc) {
@@ -644,7 +657,7 @@ public:
 			break;
 			// LCOV_EXCL_STOP
 		}
-			rh.skip(sizeof(uint64_t) * nw * BitPerEncodedBit(enc));
+			rh.skip(sizeof(uint64_t) * nw * bitPerEncodedBit(enc));
 		}
 	}
 
@@ -661,9 +674,9 @@ public:
 		while (true) {
 			if (rh.ptr == tail) break;
 			FST_DCHECK_GT(tail, rh.ptr);
-			const auto time_index = rh.Read<uint64_t>();
-			const auto enc = rh.Read<EncodingType>();
-			const auto num_element = BitPerEncodedBit(enc);
+			const auto time_index = rh.read<uint64_t>();
+			const auto enc = rh.read<EncodingType>();
+			const auto num_element = bitPerEncodedBit(enc);
 			const auto num_byte = num_element * nw * sizeof(uint64_t);
 			if (first) {
 				// Note: [0] is initial value, which is already dumped in dumpInitialBits()
@@ -700,7 +713,7 @@ public:
 }  // namespace detail
 
 template <typename Callable, typename... Args>
-auto VariableInfo::DispatchHelper(Callable &&callable, Args &&...args) const {
+auto VariableInfo::dispatchHelper(Callable &&callable, Args &&...args) const {
 	const auto bitwidth = this->bitwidth();
 	const auto is_real = this->is_real();
 	if (not is_real) {
@@ -734,47 +747,49 @@ auto VariableInfo::DispatchHelper(Callable &&callable, Args &&...args) const {
 	);
 }
 
-inline VariableInfo::VariableInfo(uint16_t bitwidth_, bool is_real_) {
-	BuildMisc(bitwidth_, is_real_);
-	DispatchHelper([this](auto obj) {
-		obj.construct();
-		last_written_bytes(size());
-	});
+inline VariableInfo::VariableInfo(uint32_t bitwidth_, bool is_real_) {
+	platform::write_field(misc, bitwidth_, kBitwidthWidth, kBitwidthOffset);
+	platform::write_field(misc, is_real_, kIsRealWidth, kIsRealOffset);
+	dispatchHelper([](auto obj) { obj.construct(); });
+	last_written_encode_type(EncodingType::BINARY);
 }
 
 inline uint32_t VariableInfo::emitValueChange(uint64_t current_time_index, const uint64_t val) {
-	const auto last_written_bytes_ =
-		DispatchHelper([=](auto obj) { return obj.emitValueChange(current_time_index, val); });
-	last_written_bytes(last_written_bytes_);
-	return last_written_bytes_;
+	const auto old_size = size();
+	dispatchHelper([=](auto obj) { obj.emitValueChange(current_time_index, val); });
+	last_written_encode_type(EncodingType::BINARY);
+	return size() - old_size;
 }
 
 inline uint32_t VariableInfo::emitValueChange(
 	uint64_t current_time_index, const uint32_t *val, EncodingType encoding
 ) {
-	const auto last_written_bytes_ = DispatchHelper([=](auto obj) {
-		return obj.emitValueChange(current_time_index, val, encoding);
-	});
-	last_written_bytes(last_written_bytes_);
-	return last_written_bytes_;
+	const auto old_size = size();
+	dispatchHelper([=](auto obj) { obj.emitValueChange(current_time_index, val, encoding); });
+	last_written_encode_type(encoding);
+	return size() - old_size;
 }
 
 inline uint32_t VariableInfo::emitValueChange(
 	uint64_t current_time_index, const uint64_t *val, EncodingType encoding
 ) {
-	const auto last_written_bytes_ = DispatchHelper([=](auto obj) {
-		return obj.emitValueChange(current_time_index, val, encoding);
-	});
-	last_written_bytes(last_written_bytes_);
-	return last_written_bytes_;
+	const auto old_size = size();
+	dispatchHelper([=](auto obj) { obj.emitValueChange(current_time_index, val, encoding); });
+	last_written_encode_type(encoding);
+	return size() - old_size;
 }
 
 inline void VariableInfo::dumpInitialBits(std::vector<uint8_t> &buf) const {
-	DispatchHelper([&](auto obj) { obj.dumpInitialBits(buf); });
+	dispatchHelper([&](auto obj) { obj.dumpInitialBits(buf); });
 }
 
 inline void VariableInfo::dumpValueChanges(std::vector<uint8_t> &buf) const {
-	DispatchHelper([&](auto obj) { obj.dumpValueChanges(buf); });
+	dispatchHelper([&](auto obj) { obj.dumpValueChanges(buf); });
+}
+
+inline uint64_t VariableInfo::last_written_bytes() const {
+	const auto encoding = last_written_encode_type();
+	return dispatchHelper([encoding](auto obj) { return obj.computeBytesNeeded(encoding); });
 }
 
 }  // namespace fst
