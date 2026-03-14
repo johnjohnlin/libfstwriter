@@ -2,3 +2,5 @@
 *.fst
 *.fst.hier
 *.vcd
+/integration_test/verilator_share/
+/integration_test/tests/*/verilated/

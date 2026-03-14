@@ -20,7 +20,12 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtest-dev lcov
+          sudo apt-get install -y libgtest-dev lcov liblz4-dev
+
+      - name: Setup Verilator
+        uses: veryl-lang/setup-verilator@v1
+        with:
+          version: '5.044'
 
       - name: Run tests
         run: ./run_regression.sh --coverage
