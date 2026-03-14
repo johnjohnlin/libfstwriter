@@ -84,7 +84,7 @@ file(
     integration_test/verilator_share/*.cpp
 )
 add_library(verilator_share OBJECT ${VERILATOR_SHARE})
-include_directories(integration_test/verilator_share)
+include_directories(integration_test/verilator_share integration_test/verilator_share/vltstd)
 
 # for all direct folders under integration_test/tests, find all *.cpp files and compile them as an executable
 file(GLOB TEST_PATHS integration_test/tests/*)

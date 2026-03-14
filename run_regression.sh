@@ -27,6 +27,13 @@ while [[ "$#" -gt 0 ]]; do
 	shift
 done
 
+function SetupVerilator() {
+	echo "Setting up Verilator runtime..."
+	chmod +x integration_test/setup_runtime.sh
+	./integration_test/setup_runtime.sh
+}
+
+
 function CMakeInit() {
 	rm -rf "$BUILD_DIR"
 	mkdir -p "$BUILD_DIR"
@@ -93,19 +100,22 @@ function GenerateResults() {
 ######################################
 echo "Running regression test..."
 
-echo "1/4 CMake..."
+echo "1/5 Setup Verilator..."
+SetupVerilator || { echo "Failed to setup Verilator"; exit 1; }
+
+echo "2/5 CMake..."
 CMakeInit || { echo "Failed to run CMake"; exit 1; }
 
 # Everything after this point is in the build directory
 cd "$BUILD_DIR"
 
-echo "2/4 Building and running tests..."
+echo "3/5 Building and running tests..."
 BuildAndRunTests || { echo "Failed to build and run tests"; exit 1; }
 
-echo "3/4 Collecting coverage..."
+echo "4/5 Collecting coverage..."
 CollectCoverage || { echo "Failed to collect coverage"; exit 1; }
 
-echo "4/4 Generating results..."
+echo "5/5 Generating results..."
 GenerateResults > "regression_results.md"
 GEN_RES=$?
 cat "regression_results.md"
