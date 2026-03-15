@@ -10,8 +10,7 @@
 // C++ standard library headers
 #include <algorithm>
 #include <cstdint>
-// #include <cstdlib>
-// #include <string>
+#include <limits>
 #include <vector>
 // Other libraries' .h files.
 // Your project's .h files.
@@ -66,6 +65,13 @@ class VariableInfo final {
 	//    - 2b last_encoding_type
 	//    - 23b bitwidth
 	//    - 1b is_real
+
+	// Note: optimization possibility (not implemented)
+	//    - real is always 64-bit double, so we can use 24 bits to encode
+	//      is_real and bitwidth together, and bitwidth = (1<<24-1) is a special
+	//      value to indicate that the variable is a real.
+	//    - Currently bitwidth is whatever you pass to Writer::createVar.
+	//    - Not implemented since nobody needs 16M-bit over 8M-bit bitwidth IMO.
 	static constexpr uint32_t kIsRealWidth = 1;
 	static constexpr uint32_t kBitwidthWidth = 23;
 	static constexpr uint32_t kLastEncodingTypeWidth = 2;
@@ -281,11 +287,14 @@ public:
 		const size_t needed = computeBytesNeeded(EncodingType::BINARY);
 		info.resize(needed);
 		EmitWriterHelper wh(info.data_ptr());
-		wh.writeTimeIndexAndEncoding(0, EncodingType::BINARY).write<double>(0.0);
+		const double nan_val = std::numeric_limits<double>::quiet_NaN();
+		const uint64_t nan_val_u64 = *reinterpret_cast<const uint64_t *>(&nan_val);
+		wh.writeTimeIndexAndEncoding(0, EncodingType::BINARY).write<uint64_t>(nan_val_u64);
 	}
 
 	void emitValueChange(uint64_t current_time_index, const uint64_t val) {
 		auto wh = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
+		std::cout << current_time_index << ": " << std::hex << val << std::endl;
 		// Note, do not use write<double> here since the uint64_t is
 		// already bit_cast'ed from double
 		wh.write<uint64_t>(val);
@@ -330,7 +339,11 @@ public:
 				FST_CHECK(enc == EncodingType::BINARY);
 				const uint64_t delta_time_index = time_index - prev_time_index;
 				prev_time_index = time_index;
-				wh.writeLEB128(delta_time_index).write<double>(rh.peek<double>());
+				// Double shall be treated as non-binary
+				const bool has_non_binary = true;
+				wh  //
+					.writeLEB128((delta_time_index << 1) | has_non_binary)
+					.write<double>(rh.peek<double>());
 			}
 			rh.skip(num_byte);
 		}

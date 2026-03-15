@@ -179,6 +179,11 @@ public:
 	// Pass by value for small integers
 	void emitValueChange(Handle handle, uint64_t val);
 	// Add support for C-string value changes (e.g. fst string values)
+	// Note: This function is mainly for GtkWave compatibility.
+	// It is very dirty and inefficient, users should avoid using it.
+	// - For double handles, const char* is interpreted as a double* (8B)
+	// - For normal integer handles, const char* is "01xz..." (1B per bit)
+	// We only ensure that this function works where Verilator use it.
 	void emitValueChange(Handle handle, const char *val);
 
 	//////////////////////////////

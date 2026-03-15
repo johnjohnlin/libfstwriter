@@ -20,6 +20,7 @@ module Simple (
 );
 
 assign counter_add_enum_version = counter_add_e'(counter_add);
+real test_double;
 
 always_ff @(posedge clk or negedge rst_n) begin
   if (!rst_n) begin
@@ -28,6 +29,7 @@ always_ff @(posedge clk or negedge rst_n) begin
     counter_add <= counter_add + 2'b01;
   end
 end
+assign test_double = {32{counter_add}};
 
 always_ff @(posedge clk or negedge rst_n) begin
   if (!rst_n) begin

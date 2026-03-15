@@ -299,7 +299,6 @@ void fstWriterEmitValueChangeVec64(
 
 void fstWriterEmitValueChange(fstWriterContext *ctx, fstHandle handle, const void *val) {
 	if (not ctx) return;
-	// treat val as C-string
 	ctx->writer.emitValueChange(handle, static_cast<const char *>(val));
 }
 

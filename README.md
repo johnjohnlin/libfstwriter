@@ -59,7 +59,7 @@ Then, to configure the project with debug symbols and prepare it for *VS Code*+*
 
 ```bash
 # Generate build files using Ninja
-cmake -G Ninja -B build/debug -DCMAKE_BUILD_TYPE=Debug .
+cmake -G Ninja -B build/debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
 ```
 
 ### Manual Build for Development (No coverage test)
