@@ -6,9 +6,9 @@
 // direct include
 // C system headers
 // C++ standard library headers
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
-#include <stdexcept>
 // Other libraries' .h files.
 // Your project's .h files.
 
@@ -18,7 +18,7 @@
 		oss << "FST_CHECK failed: " #a; \
 		const auto e = oss.str();       \
 		std::cerr << e << std::endl;    \
-		throw std::runtime_error(e);    \
+		std::abort();                   \
 	}
 
 #define FST_CHECK_EQ(a, b)                           \
@@ -28,7 +28,7 @@
 		oss << " (" << (a) << " vs. " << (b) << ")"; \
 		const auto e = oss.str();                    \
 		std::cerr << e << std::endl;                 \
-		throw std::runtime_error(e);                 \
+		std::abort();                                \
 	}
 
 #define FST_CHECK_NE(a, b)                           \
@@ -38,7 +38,7 @@
 		oss << " (" << (a) << " vs. " << (b) << ")"; \
 		const auto e = oss.str();                    \
 		std::cerr << e << std::endl;                 \
-		throw std::runtime_error(e);                 \
+		std::abort();                                \
 	}
 
 #define FST_CHECK_GT(a, b)                           \
@@ -48,7 +48,7 @@
 		oss << " (" << (a) << " vs. " << (b) << ")"; \
 		const auto e = oss.str();                    \
 		std::cerr << e << std::endl;                 \
-		throw std::runtime_error(e);                 \
+		std::abort();                                \
 	}
 
 #define FST_CHECK_GE(a, b)                           \
@@ -58,7 +58,7 @@
 		oss << " (" << (a) << " vs. " << (b) << ")"; \
 		const auto e = oss.str();                    \
 		std::cerr << e << std::endl;                 \
-		throw std::runtime_error(e);                 \
+		std::abort();                                \
 	}
 
 #define FST_CHECK_LT(a, b)                           \
@@ -68,7 +68,7 @@
 		oss << " (" << (a) << " vs. " << (b) << ")"; \
 		const auto e = oss.str();                    \
 		std::cerr << e << std::endl;                 \
-		throw std::runtime_error(e);                 \
+		std::abort();                                \
 	}
 
 #define FST_CHECK_LE(a, b)                           \
@@ -78,7 +78,7 @@
 		oss << " (" << (a) << " vs. " << (b) << ")"; \
 		const auto e = oss.str();                    \
 		std::cerr << e << std::endl;                 \
-		throw std::runtime_error(e);                 \
+		std::abort();                                \
 	}
 
 // We turn on all DCHECKs to CHECKs temporarily for better safety.
@@ -102,16 +102,12 @@
 
 // Compatibility layer for unreachable code hint
 #if defined(__cplusplus) && __cplusplus >= 202302L
-// Prefer the standard library version if available
 #	include <utility>
 #	define FST_UNREACHABLE std::unreachable()
-#elif defined(__GNUC__) || defined(__clang__)
-// --- GCC / Clang ---
+#elif USE_GCC_INTRINSIC
 #	define FST_UNREACHABLE __builtin_unreachable()
-#elif defined(_MSC_VER)
-// --- MSVC ---
-#	define FST_UNREACHABLE __assume(0)
+// TODO: implement MSVC version
+// #elif USE_MSVC_INTRINSIC
 #else
-// --- Fallback ---
 #	define FST_UNREACHABLE std::abort()
 #endif

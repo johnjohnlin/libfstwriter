@@ -47,24 +47,24 @@ fstWriterContext *fstWriterCreate(const char *name, int use_compressed_hier) {
 }
 
 void fstWriterClose(fstWriterContext *ctx) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.close();
 	delete ctx;
 }
 
 void fstWriterFlushContext(fstWriterContext *ctx) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.flushValueChangeData();
 }
 
 // Header related
 void fstWriterSetTimescale(fstWriterContext *ctx, int ts) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.setTimecale(static_cast<int8_t>(ts));
 }
 
 void fstWriterSetTimescaleFromString(fstWriterContext *ctx, const char *s) {
-	if (not ctx or not s) return;
+	if (! ctx or ! s) return;
 	// Just use the original parsing logic from fstapi.c
 	int mat = 0;
 	int seconds_exp = -9;
@@ -100,17 +100,17 @@ void fstWriterSetTimescaleFromString(fstWriterContext *ctx, const char *s) {
 }
 
 void fstWriterSetTimezero(fstWriterContext *ctx, int64_t tim) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.setTimezero(tim);
 }
 
 void fstWriterSetVersion(fstWriterContext *ctx, const char *vers) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.setWriter(vers);
 }
 
 void fstWriterSetDate(fstWriterContext *ctx, const char *dat) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.setDate(dat);
 }
 
@@ -118,12 +118,12 @@ void fstWriterSetDate(fstWriterContext *ctx, const char *dat) {
 void fstWriterSetScope(
 	fstWriterContext *ctx, enum fstScopeType scopetype, const char *scopename, const char *scopecomp
 ) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.setScope(static_cast<fst::Hierarchy::ScopeType>(scopetype), scopename, scopecomp);
 }
 
 void fstWriterSetUpscope(fstWriterContext *ctx) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.upscope();
 }
 
@@ -135,7 +135,7 @@ fstHandle fstWriterCreateVar(
 	const char *nam,
 	fstHandle aliasHandle
 ) {
-	if (not ctx) return 0;
+	if (! ctx) return 0;
 	return ctx->writer.createVar(
 		static_cast<fst::Hierarchy::VarType>(vt),
 		static_cast<fst::Hierarchy::VarDirection>(vd),
@@ -183,7 +183,7 @@ fstEnumHandle fstWriterCreateEnumTable(
 	const char **literal_arr,
 	const char **val_arr
 ) {
-	if (not ctx or not name or not literal_arr or not val_arr) return 0;
+	if (! ctx or ! name or ! literal_arr or ! val_arr) return 0;
 	vector<pair<fst::string_view_pair, fst::string_view_pair>> literal_val_arr;
 	literal_val_arr.reserve(elem_count);
 	for (uint32_t i = 0; i < elem_count; ++i) {
@@ -197,7 +197,7 @@ fstEnumHandle fstWriterCreateEnumTable(
 }
 
 void fstWriterEmitEnumTableRef(fstWriterContext *ctx, fstEnumHandle handle) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.emitEnumTableRef(handle);
 }
 
@@ -208,7 +208,7 @@ void fstWriterSetAttrBegin(
 	const char *attrname,
 	uint64_t arg
 ) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.setAttrBegin(
 		static_cast<fst::Hierarchy::AttrType>(attrtype),
 		static_cast<fst::Hierarchy::AttrSubType>(subtype),
@@ -218,7 +218,7 @@ void fstWriterSetAttrBegin(
 }
 
 void fstWriterSetAttrEnd(fstWriterContext *ctx) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.setAttrEnd();
 }
 
@@ -256,20 +256,21 @@ void fstWriterSetSourceStem(
 
 // Waveform related
 void fstWriterEmitTimeChange(fstWriterContext *ctx, uint64_t tim) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.emitTimeChange(tim);
 }
 
 void fstWriterEmitDumpActive(fstWriterContext *ctx, int enable) {
-	if (not ctx) return;
-	ctx->writer.emitDumpActive(enable != 0);
+	(void)ctx;
+	(void)enable;
+	TODO(__func__);
 }
 
 void fstWriterEmitValueChange32(
 	fstWriterContext *ctx, fstHandle handle, uint32_t bits, uint32_t val
 ) {
 	(void)bits;
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.emitValueChange(handle, (uint64_t)val);
 }
 
@@ -277,7 +278,7 @@ void fstWriterEmitValueChange64(
 	fstWriterContext *ctx, fstHandle handle, uint32_t bits, uint64_t val
 ) {
 	(void)bits;
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.emitValueChange(handle, val);
 }
 
@@ -285,7 +286,7 @@ void fstWriterEmitValueChangeVec32(
 	fstWriterContext *ctx, fstHandle handle, uint32_t bits, const uint32_t *val
 ) {
 	(void)bits;
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.emitValueChange(handle, val);
 }
 
@@ -293,12 +294,12 @@ void fstWriterEmitValueChangeVec64(
 	fstWriterContext *ctx, fstHandle handle, uint32_t bits, const uint64_t *val
 ) {
 	(void)bits;
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.emitValueChange(handle, val);
 }
 
 void fstWriterEmitValueChange(fstWriterContext *ctx, fstHandle handle, const void *val) {
-	if (not ctx) return;
+	if (! ctx) return;
 	ctx->writer.emitValueChange(handle, static_cast<const char *>(val));
 }
 
@@ -334,7 +335,7 @@ void fstWriterSetRepackOnClose(fstWriterContext *, int) {
 	NotImplementedWarning(__func__);
 }
 void fstWriterSetPackType(fstWriterContext *ctx, enum fstWriterPackType pack_type) {
-	if (not ctx) return;
+	if (! ctx) return;
 	switch (pack_type) {
 	case FST_WR_PT_ZLIB:
 		ctx->writer.setWriterPackType(fst::WriterPackType::ZLIB);
