@@ -8,6 +8,9 @@
 #include "fstcpp/fstcpp.h"
 // C system headers
 // C++ standard library headers
+#if defined(__cplusplus) && __cplusplus >= 202002L
+#	include <bit>
+#endif
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -23,7 +26,31 @@ namespace platform {
 
 // Can be replaced with std::bit_width when C++20 is available
 inline uint64_t clog2(uint64_t x) {
+	if (x <= 1) return 0;
+#if defined(__cplusplus) && __cplusplus >= 202002L
+	return std::bit_width(x - 1);
+#elif USE_GCC_INTRINSIC
 	return 64 - __builtin_clzll(x - 1);
+// TODO: implement MSVC version
+// #elif USE_MSVC_INTRINSIC
+#else
+	uint64_t r = 0;
+	x -= 1;
+	auto CheckAndShift = [&](uint64_t shift) {
+		if (x >> shift) {
+			r += shift;
+			x >>= shift;
+		}
+	};
+	CheckAndShift(32);
+	CheckAndShift(16);
+	CheckAndShift(8);
+	CheckAndShift(4);
+	CheckAndShift(2);
+	CheckAndShift(1);
+	r += x;
+	return r;
+#endif
 }
 
 inline constexpr uint32_t gen_mask_safe(unsigned width) {
@@ -44,6 +71,10 @@ inline void write_field(uint32_t &dst, const uint32_t src, unsigned width, unsig
 }  // namespace platform
 
 class VariableInfo final {
+public:
+	static constexpr uint32_t kMaxSupportedBitwidth = 0x7fffff;
+
+private:
 	static constexpr uint64_t kCapacityBaseShift = 5;
 	static constexpr uint64_t kCapacityBase = 1 << kCapacityBaseShift;
 
@@ -54,17 +85,19 @@ class VariableInfo final {
 
 	// begin of data members
 	// 1. 8B pointer (assume 64-bit architecture), its size can be:
-	//   - 0 if data is nullptr
-	//   - `kCapacityBase * pow(2, capacity_log2)` if data is not nullptr
+	//   - 0 if m_data is nullptr
+	//   - `kCapacityBase * pow(2, m_capacity_log2)` if m_data is not nullptr
 	//   - If we want more bits, we can use the `kCapacityBaseShift` LSB for other purposes.
-	uint8_t *data = nullptr;
+	uint8_t *m_data{nullptr};
 	// 2. 4B size. The same as vector.size(), but we only need 32b.
-	uint32_t size_ = 0;
+	uint32_t m_size{0};
 	// 3. 4B misc. Highly compacted information for max cache efficiency.
 	//    - 6b capacity_log2
 	//    - 2b last_encoding_type
 	//    - 23b bitwidth
 	//    - 1b is_real
+	uint32_t m_misc{0};
+	// end of data members
 
 	// Note: optimization possibility (not implemented)
 	//    - real is always 64-bit double, so we can use 24 bits to encode
@@ -82,42 +115,42 @@ class VariableInfo final {
 	static constexpr uint32_t kLastEncodingTypeOffset = kBitwidthOffset + kBitwidthWidth;
 	static constexpr uint32_t kCapacityLog2Offset =
 		kLastEncodingTypeOffset + kLastEncodingTypeWidth;
-	uint32_t misc = 0;
-	// end of data members
 
 	void capacity_log2(uint32_t capacity_log2_) {
-		platform::write_field(misc, capacity_log2_, kCapacityLog2Width, kCapacityLog2Offset);
+		platform::write_field(m_misc, capacity_log2_, kCapacityLog2Width, kCapacityLog2Offset);
 	}
 	uint32_t capacity() const {
-		if (data == nullptr) {
+		if (m_data == nullptr) {
 			return 0;
 		}
-		return kCapacityBase << platform::read_field(misc, kCapacityLog2Width, kCapacityLog2Offset);
+		return kCapacityBase << platform::read_field(
+				   m_misc, kCapacityLog2Width, kCapacityLog2Offset
+			   );
 	}
 
-	inline bool need_reallocate(uint64_t new_size) const { return capacity() < new_size; }
+	bool need_reallocate(uint64_t new_size) const { return capacity() < new_size; }
 	// This function is cold, so we don't inline it
 	void reallocate(uint64_t new_size);
 
-	inline void size(uint64_t s) { size_ = s; }
+	void size(uint64_t s) { m_size = static_cast<uint32_t>(s); }
 
 public:
-	static constexpr uint32_t kMaxSupportedBitwidth = 0x7fffff;
-	inline uint64_t size() const { return size_; }
-	inline uint32_t bitwidth() const {
-		return platform::read_field(misc, kBitwidthWidth, kBitwidthOffset);
+	uint64_t size() const { return m_size; }
+	uint32_t bitwidth() const {
+		return platform::read_field(m_misc, kBitwidthWidth, kBitwidthOffset);
 	}
-	inline bool is_real() const {
-		return bool(platform::read_field(misc, kIsRealWidth, kIsRealOffset));
-	}
-	inline void last_written_encode_type(EncodingType encoding_) {
+	bool is_real() const { return bool(platform::read_field(m_misc, kIsRealWidth, kIsRealOffset)); }
+	void last_written_encode_type(EncodingType encoding_) {
 		platform::write_field(
-			misc, static_cast<uint32_t>(encoding_), kLastEncodingTypeWidth, kLastEncodingTypeOffset
+			m_misc,
+			static_cast<uint32_t>(encoding_),
+			kLastEncodingTypeWidth,
+			kLastEncodingTypeOffset
 		);
 	}
-	inline EncodingType last_written_encode_type() const {
+	EncodingType last_written_encode_type() const {
 		return static_cast<EncodingType>(
-			platform::read_field(misc, kLastEncodingTypeWidth, kLastEncodingTypeOffset)
+			platform::read_field(m_misc, kLastEncodingTypeWidth, kLastEncodingTypeOffset)
 		);
 	}
 	uint64_t last_written_bytes() const;
@@ -135,11 +168,10 @@ public:
 		}
 	}
 	VariableInfo(VariableInfo &&rhs) {
-		data = rhs.data;
-		rhs.data = nullptr;
-		misc = rhs.misc;
-		size_ = rhs.size_;
-		// rhs.misc = 0;
+		m_data = rhs.m_data;
+		rhs.m_data = nullptr;
+		m_misc = rhs.m_misc;
+		m_size = rhs.m_size;
 	}
 
 	uint32_t emitValueChange(uint64_t current_time_index, const uint64_t val);
@@ -151,8 +183,8 @@ public:
 	);
 
 	void keepOnlyTheLatestValue() {
-		const auto last_written_bytes_ = last_written_bytes();
-		const auto data_ptr_ = data_ptr();
+		const uint64_t last_written_bytes_ = last_written_bytes();
+		uint8_t *data_ptr_ = data_ptr();
 		std::copy_n(data_ptr_ + size() - last_written_bytes_, last_written_bytes_, data_ptr_);
 		size(last_written_bytes_);
 	}
@@ -172,7 +204,7 @@ public:
 		size(new_size);
 	}
 	void add_size(size_t added_size) { resize(size() + added_size); }
-	uint8_t *data_ptr() { return data; }
+	uint8_t *data_ptr() { return m_data; }
 };
 static_assert(
 	sizeof(VariableInfo) != 12,
@@ -288,13 +320,13 @@ public:
 		info.resize(needed);
 		EmitWriterHelper wh(info.data_ptr());
 		const double nan_val = std::numeric_limits<double>::quiet_NaN();
-		const uint64_t nan_val_u64 = *reinterpret_cast<const uint64_t *>(&nan_val);
+		uint64_t nan_val_u64;
+		std::memcpy(&nan_val_u64, &nan_val, sizeof(nan_val_u64));
 		wh.writeTimeIndexAndEncoding(0, EncodingType::BINARY).write<uint64_t>(nan_val_u64);
 	}
 
 	void emitValueChange(uint64_t current_time_index, const uint64_t val) {
 		auto wh = emitValueChangeCommonPart(current_time_index, EncodingType::BINARY);
-		std::cout << current_time_index << ": " << std::hex << val << std::endl;
 		// Note, do not use write<double> here since the uint64_t is
 		// already bit_cast'ed from double
 		wh.write<uint64_t>(val);
@@ -358,14 +390,12 @@ public:
 	VariableInfoScalarInt(VariableInfo &info_) : info(info_) {}
 
 public:
-	inline size_t computeBytesNeeded(EncodingType encoding) const {
+	size_t computeBytesNeeded(EncodingType encoding) const {
 		return kEmitTimeIndexAndEncodingSize + sizeof(T) * bitPerEncodedBit(encoding);
 	}
 
 	// The returning address points to the first byte of the value
-	inline EmitWriterHelper emitValueChangeCommonPart(
-		uint64_t current_time_index, EncodingType encoding
-	) {
+	EmitWriterHelper emitValueChangeCommonPart(uint64_t current_time_index, EncodingType encoding) {
 		if (current_time_index + 1 == 0) {
 			// This is the first value change, we need to remove everything
 			// and then add the new value
@@ -548,16 +578,14 @@ public:
 	VariableInfoLongInt(VariableInfo &info_) : info(info_) {}
 
 public:
-	inline size_t computeBytesNeeded(EncodingType encoding) const {
+	size_t computeBytesNeeded(EncodingType encoding) const {
 		return (
 			kEmitTimeIndexAndEncodingSize +
 			num_words() * sizeof(uint64_t) * bitPerEncodedBit(encoding)
 		);
 	}
 
-	inline EmitWriterHelper emitValueChangeCommonPart(
-		uint64_t current_time_index, EncodingType encoding
-	) {
+	EmitWriterHelper emitValueChangeCommonPart(uint64_t current_time_index, EncodingType encoding) {
 		if (current_time_index + 1 == 0) {
 			info.resize(0);
 		}
@@ -727,9 +755,9 @@ public:
 
 template <typename Callable, typename... Args>
 auto VariableInfo::dispatchHelper(Callable &&callable, Args &&...args) const {
-	const auto bitwidth = this->bitwidth();
-	const auto is_real = this->is_real();
-	if (not is_real) {
+	const uint32_t bitwidth = this->bitwidth();
+	const bool is_real = this->is_real();
+	if (!is_real) {
 		// Decision: the branch miss is too expensive for large design, so we only use 3 types of
 		// int
 		if (bitwidth <= 8) {
@@ -737,12 +765,6 @@ auto VariableInfo::dispatchHelper(Callable &&callable, Args &&...args) const {
 				detail::VariableInfoScalarInt<uint8_t>(const_cast<VariableInfo &>(*this)),
 				std::forward<Args>(args)...
 			);
-			// } else if (bitwidth <= 16) {
-			// 	return
-			// callable(detail::VariableInfoScalarInt<uint16_t>(const_cast<VariableInfo&>(*this)),
-			// std::forward<Args>(args)...); } else if (bitwidth <= 32) { 	return
-			// callable(detail::VariableInfoScalarInt<uint32_t>(const_cast<VariableInfo&>(*this)),
-			// std::forward<Args>(args)...);
 		} else if (bitwidth <= 64) {
 			return callable(
 				detail::VariableInfoScalarInt<uint64_t>(const_cast<VariableInfo &>(*this)),
@@ -761,35 +783,35 @@ auto VariableInfo::dispatchHelper(Callable &&callable, Args &&...args) const {
 }
 
 inline VariableInfo::VariableInfo(uint32_t bitwidth_, bool is_real_) {
-	platform::write_field(misc, bitwidth_, kBitwidthWidth, kBitwidthOffset);
-	platform::write_field(misc, is_real_, kIsRealWidth, kIsRealOffset);
+	platform::write_field(m_misc, bitwidth_, kBitwidthWidth, kBitwidthOffset);
+	platform::write_field(m_misc, is_real_, kIsRealWidth, kIsRealOffset);
 	dispatchHelper([](auto obj) { obj.construct(); });
 	last_written_encode_type(EncodingType::BINARY);
 }
 
 inline uint32_t VariableInfo::emitValueChange(uint64_t current_time_index, const uint64_t val) {
-	const auto old_size = size();
+	const uint64_t old_size = size();
 	dispatchHelper([=](auto obj) { obj.emitValueChange(current_time_index, val); });
 	last_written_encode_type(EncodingType::BINARY);
-	return size() - old_size;
+	return static_cast<uint32_t>(size() - old_size);
 }
 
 inline uint32_t VariableInfo::emitValueChange(
 	uint64_t current_time_index, const uint32_t *val, EncodingType encoding
 ) {
-	const auto old_size = size();
+	const uint64_t old_size = size();
 	dispatchHelper([=](auto obj) { obj.emitValueChange(current_time_index, val, encoding); });
 	last_written_encode_type(encoding);
-	return size() - old_size;
+	return static_cast<uint32_t>(size() - old_size);
 }
 
 inline uint32_t VariableInfo::emitValueChange(
 	uint64_t current_time_index, const uint64_t *val, EncodingType encoding
 ) {
-	const auto old_size = size();
+	const uint64_t old_size = size();
 	dispatchHelper([=](auto obj) { obj.emitValueChange(current_time_index, val, encoding); });
 	last_written_encode_type(encoding);
-	return size() - old_size;
+	return static_cast<uint32_t>(size() - old_size);
 }
 
 inline void VariableInfo::dumpInitialBits(std::vector<uint8_t> &buf) const {
@@ -801,7 +823,7 @@ inline void VariableInfo::dumpValueChanges(std::vector<uint8_t> &buf) const {
 }
 
 inline uint64_t VariableInfo::last_written_bytes() const {
-	const auto encoding = last_written_encode_type();
+	const EncodingType encoding = last_written_encode_type();
 	return dispatchHelper([encoding](auto obj) { return obj.computeBytesNeeded(encoding); });
 }
 

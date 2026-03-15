@@ -17,7 +17,7 @@
 using namespace std;
 
 static const string V2S(vector<uint8_t> &v) {
-	return string(reinterpret_cast<char *>(v.data()), v.size());
+	return string{reinterpret_cast<const char *>(v.data()), v.size()};
 }
 
 namespace fst {
@@ -36,8 +36,8 @@ protected:
 	static void flushValueChangeData_Timestamps(
 		vector<uint8_t> &buf, const vector<uint64_t> &timestamps
 	) {
-		detail::ValueChangeData vcd;
-		vcd.timestamps = timestamps;
+		detail::ValueChangeData vcd{};
+		vcd.m_timestamps = timestamps;
 		vcd.writeTimestamps(buf);
 	}
 
@@ -66,14 +66,14 @@ protected:
 // Tests for flushValueChangeData_ValueChanges_UniquifyWaveData
 ////////////////////////////////////////////////
 TEST_F(WriterTest, flushValueChangeData_ValueChanges_UniquifyWaveData_NoData) {
-	vector<vector<uint8_t>> data;
-	auto positions = flushValueChangeData_ValueChanges_UniquifyWaveData(data);
+	vector<vector<uint8_t>> data{};
+	const vector<int64_t> positions{flushValueChangeData_ValueChanges_UniquifyWaveData(data)};
 	EXPECT_TRUE(positions.empty());
 }
 
 TEST_F(WriterTest, flushValueChangeData_ValueChanges_UniquifyWaveData_AllEmpty) {
-	vector<vector<uint8_t>> data = {{}, {}, {}};
-	auto positions = flushValueChangeData_ValueChanges_UniquifyWaveData(data);
+	vector<vector<uint8_t>> data{{}, {}, {}};
+	const vector<int64_t> positions{flushValueChangeData_ValueChanges_UniquifyWaveData(data)};
 	EXPECT_EQ(positions.size(), 3);
 	EXPECT_EQ(positions[0], 0);
 	EXPECT_EQ(positions[1], 0);
@@ -81,8 +81,8 @@ TEST_F(WriterTest, flushValueChangeData_ValueChanges_UniquifyWaveData_AllEmpty) 
 }
 
 TEST_F(WriterTest, flushValueChangeData_ValueChanges_UniquifyWaveData_NoDuplicates) {
-	vector<vector<uint8_t>> data = {{'a', 'b'}, {'c', 'd'}, {'e', 'f'}};
-	auto positions = flushValueChangeData_ValueChanges_UniquifyWaveData(data);
+	vector<vector<uint8_t>> data{{'a', 'b'}, {'c', 'd'}, {'e', 'f'}};
+	const vector<int64_t> positions{flushValueChangeData_ValueChanges_UniquifyWaveData(data)};
 	EXPECT_EQ(positions.size(), 3);
 	EXPECT_EQ(positions[0], 0);
 	EXPECT_EQ(positions[1], 0);
@@ -94,7 +94,7 @@ TEST_F(WriterTest, flushValueChangeData_ValueChanges_UniquifyWaveData_NoDuplicat
 }
 
 TEST_F(WriterTest, flushValueChangeData_ValueChanges_UniquifyWaveData_WithDuplicates) {
-	vector<vector<uint8_t>> data = {
+	vector<vector<uint8_t>> data{
 		{'a', 'b'},
 		{'c', 'd'},
 		{'a', 'b'},  // duplicate of [0]
@@ -102,7 +102,7 @@ TEST_F(WriterTest, flushValueChangeData_ValueChanges_UniquifyWaveData_WithDuplic
 		{'a', 'b'},  // duplicate of [0]
 		{'e', 'f'}   // duplicate of [3]
 	};
-	auto positions = flushValueChangeData_ValueChanges_UniquifyWaveData(data);
+	const vector<int64_t> positions{flushValueChangeData_ValueChanges_UniquifyWaveData(data)};
 	EXPECT_EQ(positions.size(), 6);
 	EXPECT_EQ(positions[0], 0);
 	EXPECT_EQ(positions[1], 0);
@@ -126,14 +126,14 @@ TEST_F(WriterTest, flushValueChangeData_ValueChanges_UniquifyWaveData_WithDuplic
 TEST_F(
 	WriterTest, flushValueChangeData_ValueChanges_EncodePositionsAndwriteUniqueWaveData_Negative
 ) {
-	vector<vector<uint8_t>> data = {
+	vector<vector<uint8_t>> data{
 		{},               // empty, positions[0] must be 0
 		{'a', 'b'},       // the first block to write, positions[1] must be 0
 		{},               // empty, positions[2] must be 0
 		{'z'},            // positions[3] is negative, this data is ignored
 		{'c', 'd', 'e'},  // the second block to write, positions[4] must be 0
 	};
-	vector<int64_t> positions = {
+	vector<int64_t> positions{
 		// empty, positions[0] is unchanged
 		0,
 		// first non-empty block, positions[1] will be set to 1 after encoding
@@ -178,7 +178,7 @@ TEST_F(
 TEST_F(WriterTest, flushValueChangeData_EncodedPositions) {
 	// Consolidated test with boundary values
 	// 0, 1, -1, 127, -127, 128, -128
-	vector<int64_t> positions = {0, 0, 0, 1, -1, 127, -127, 128, -128};
+	const vector<int64_t> positions{0, 0, 0, 1, -1, 127, -127, 128, -128};
 	ostringstream os;
 	flushValueChangeData_EncodedPositions(os, positions);
 
