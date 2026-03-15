@@ -262,6 +262,16 @@ void Writer::emitValueChange(Handle handle, uint64_t val) {
 void Writer::emitValueChange(Handle handle, const char *val) {
 	finalizeHierarchy_();
 	auto &var_info = value_change_data_.variable_infos AT(handle - 1);
+
+	// For double handles, const char* is interpreted as a double* (8B)
+	// This double shall be written out as raw IEEE 754 double
+	// So we just reinterpret_cast it to uint64_t and emit it
+	if (var_info.is_real()) {
+		emitValueChange(handle, *reinterpret_cast<const uint64_t *>(val));
+		return;
+	}
+
+	// For normal integer handles, const char* is "01xz..." (1B per bit)
 	const uint32_t bitwidth = var_info.bitwidth();
 	FST_DCHECK_NE(bitwidth, 0);
 
