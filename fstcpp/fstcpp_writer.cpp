@@ -269,15 +269,8 @@ void Writer::emitValueChange(Handle handle, const char *val) {
 	const uint32_t bitwidth{var_info.bitwidth()};
 	FST_DCHECK_NE(bitwidth, 0);
 
-	bool has_non_binary = false;
-	for (uint32_t i = 0; i < bitwidth; ++i) {
-		char c = val[i];
-		if (c == 'x' || c == 'X' || c == 'z' || c == 'Z' || c == 'u' || c == 'h' || c == 'w' ||
-			c == 'l') {
-			has_non_binary = true;
-			break;
-		}
-	}
+	const bool has_non_binary =
+		std::any_of(val, val + bitwidth, [](const char c) { return c != '0' && c != '1'; });
 
 	val += bitwidth;
 	const unsigned num_words{(bitwidth + 63) / 64};
@@ -317,12 +310,11 @@ void Writer::emitValueChange(Handle handle, const char *val) {
 					b0 |= 1;
 				} else if (c == 'x' || c == 'X') {
 					b1 |= 1;
-				} else if (c == 'z' || c == 'Z') {
-					b0 |= 1;
-					b1 |= 1;
-				} else if (c == 'h' || c == 'H') {
-					b1 |= 1;
-				} else if (c == 'u' || c == 'U') {
+				} else if (
+					c == 'z' || c == 'Z' || c == 'h' || c == 'H' || c == 'l' || c == 'L' ||
+					c == 'u' || c == 'U' || c == 'w' || c == 'W'
+				) {
+					// VHDL is not supported yet, treat VHDL-only values as Verilog 'z'
 					b0 |= 1;
 					b1 |= 1;
 				}
