@@ -77,9 +77,8 @@ void Writer::close() {
 	if (m_header_.m_start_time == kInvalidTime) {
 		m_header_.m_start_time = 0;
 	}
+	finalizeHierarchy_();
 	flushValueChangeData_(m_value_change_data_, m_main_fst_file_);
-	appendGeometry_(m_main_fst_file_);
-	appendHierarchy_(m_main_fst_file_);
 	appendBlackout_(m_main_fst_file_);
 	// Note: write header seek to 0, so we need to do
 	// this after all append operations

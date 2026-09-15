@@ -744,6 +744,7 @@ struct fstWriterContext
     unsigned flush_context_pending : 1;
     unsigned parallel_enabled : 1;
     unsigned parallel_was_enabled : 1;
+    unsigned hierarchy_finalized : 1;
 
     /* should really be semaphores, but are bytes to cut down on read-modify-write window size */
     unsigned char already_in_flush; /* in case control-c handlers interrupt */
@@ -1157,12 +1158,184 @@ fstWriterContext *fstWriterCreate(const char *nam, int use_compressed_hier)
     return (xc);
 }
 
+static void fstWriterFinalizeHierarchy(fstWriterContext *xc)
+{
+    if (!xc || xc->hierarchy_finalized) return;
+    xc->hierarchy_finalized = 1;
+
+    if (xc->maxhandle && xc->geom_handle) {
+        fst_off_t fixup_offs;
+        fflush(xc->geom_handle);
+        fst_off_t tlen = ftello(xc->geom_handle);
+        unsigned char *tmem = NULL;
+        errno = 0;
+        if (tlen) {
+            fstWriterMmapSanity(tmem = (unsigned char *)fstMmap(NULL,
+                                                                tlen,
+                                                                PROT_READ | PROT_WRITE,
+                                                                MAP_SHARED,
+                                                                fileno(xc->geom_handle),
+                                                                0),
+                                __FILE__,
+                                __LINE__,
+                                "tmem");
+        }
+
+        if (tmem) {
+            unsigned long destlen = tlen;
+            unsigned char *dmem = (unsigned char *)malloc(compressBound(destlen));
+            int rc = compress2(dmem, &destlen, tmem, tlen, 9);
+
+            if ((rc != Z_OK) || (((fst_off_t)destlen) > tlen)) {
+                destlen = tlen;
+            }
+
+            fixup_offs = ftello(xc->handle);
+            fputc(FST_BL_SKIP, xc->handle); /* temporary tag */
+            fstWriterUint64(xc->handle, destlen + 24); /* section length */
+            fstWriterUint64(xc->handle, tlen); /* uncompressed */
+            /* compressed len is section length - 24 */
+            fstWriterUint64(xc->handle, xc->maxhandle); /* maxhandle */
+            fstFwrite((((fst_off_t)destlen) != tlen) ? dmem : tmem, destlen, 1, xc->handle);
+            fflush(xc->handle);
+
+            fstWriterFseeko(xc, xc->handle, fixup_offs, SEEK_SET);
+            fputc(FST_BL_GEOM, xc->handle); /* actual tag */
+
+            fstWriterFseeko(xc,
+                            xc->handle,
+                            0,
+                            SEEK_END); /* move file pointer to end for any section adds */
+            fflush(xc->handle);
+
+            free(dmem);
+            fstMunmap(tmem, tlen);
+        }
+    }
+
+    if (xc->compress_hier) {
+        fst_off_t fixup_offs;
+        fst_off_t hlen, eos;
+        fst_off_t hl;
+        gzFile zhandle;
+        int zfd;
+        int fourpack_duo = 0;
+#ifndef __MINGW32__
+        int fnam_len = strlen(xc->filename) + 5 + 1;
+        char *fnam = (char *)malloc(fnam_len);
+#endif
+
+        fixup_offs = ftello(xc->handle);
+        fputc(FST_BL_SKIP, xc->handle); /* temporary tag */
+        hlen = ftello(xc->handle);
+        fstWriterUint64(xc->handle, 0); /* section length */
+        fstWriterUint64(xc->handle, xc->hier_file_len); /* uncompressed length */
+
+        if (!xc->fourpack) {
+            unsigned char *mem = (unsigned char *)malloc(FST_GZIO_LEN);
+            zfd = dup(fileno(xc->handle));
+            fflush(xc->handle);
+            zhandle = gzdopen(zfd, "wb4");
+            if (zhandle) {
+                fstWriterFseeko(xc, xc->hier_handle, 0, SEEK_SET);
+                for (hl = 0; hl < xc->hier_file_len; hl += FST_GZIO_LEN) {
+                    unsigned len = ((xc->hier_file_len - hl) > FST_GZIO_LEN)
+                                       ? FST_GZIO_LEN
+                                       : (xc->hier_file_len - hl);
+                    fstFread(mem, len, 1, xc->hier_handle);
+                    gzwrite(zhandle, mem, len);
+                }
+                gzclose(zhandle);
+            } else {
+                close(zfd);
+            }
+            free(mem);
+        } else {
+            int lz4_maxlen;
+            unsigned char *mem;
+            unsigned char *hmem = NULL;
+            int packed_len;
+
+            fflush(xc->handle);
+
+            lz4_maxlen = LZ4_compressBound(xc->hier_file_len);
+            mem = (unsigned char *)malloc(lz4_maxlen);
+            errno = 0;
+            if (xc->hier_file_len) {
+                fstWriterMmapSanity(hmem = (unsigned char *)fstMmap(NULL,
+                                                                    xc->hier_file_len,
+                                                                    PROT_READ | PROT_WRITE,
+                                                                    MAP_SHARED,
+                                                                    fileno(xc->hier_handle),
+                                                                    0),
+                                    __FILE__,
+                                    __LINE__,
+                                    "hmem");
+            }
+            packed_len =
+                LZ4_compress_default((char *)hmem, (char *)mem, xc->hier_file_len, lz4_maxlen);
+            fstMunmap(hmem, xc->hier_file_len);
+
+            fourpack_duo =
+                (!xc->repack_on_close) &&
+                (xc->hier_file_len >
+                 FST_HDR_FOURPACK_DUO_SIZE); /* double pack when hierarchy is large */
+
+            if (fourpack_duo) /* double packing with LZ4 is faster than gzip */
+            {
+                unsigned char *mem_duo;
+                int lz4_maxlen_duo;
+                int packed_len_duo;
+
+                lz4_maxlen_duo = LZ4_compressBound(packed_len);
+                mem_duo = (unsigned char *)malloc(lz4_maxlen_duo);
+                packed_len_duo = LZ4_compress_default((char *)mem,
+                                                      (char *)mem_duo,
+                                                      packed_len,
+                                                      lz4_maxlen_duo);
+
+                fstWriterVarint(xc->handle, packed_len); /* 1st round compressed length */
+                fstFwrite(mem_duo, packed_len_duo, 1, xc->handle);
+                free(mem_duo);
+            } else {
+                fstFwrite(mem, packed_len, 1, xc->handle);
+            }
+
+            free(mem);
+        }
+
+        fstWriterFseeko(xc, xc->handle, 0, SEEK_END);
+        eos = ftello(xc->handle);
+        fstWriterFseeko(xc, xc->handle, hlen, SEEK_SET);
+        fstWriterUint64(xc->handle, eos - hlen);
+        fflush(xc->handle);
+
+        fstWriterFseeko(xc, xc->handle, fixup_offs, SEEK_SET);
+        fputc(xc->fourpack ? (fourpack_duo ? FST_BL_HIER_LZ4DUO : FST_BL_HIER_LZ4)
+                           : FST_BL_HIER,
+              xc->handle); /* actual tag now also == compression type */
+
+        fstWriterFseeko(xc,
+                        xc->handle,
+                        0,
+                        SEEK_END); /* move file pointer to end for any section adds */
+        fflush(xc->handle);
+
+#ifndef __MINGW32__
+        snprintf(fnam, fnam_len, "%s.hier", xc->filename);
+        unlink(fnam);
+        free(fnam);
+#endif
+    }
+}
+
 /*
  * generation and writing out of value change data sections
  */
 static void fstWriterEmitSectionHeader(fstWriterContext *xc)
 {
     if (xc) {
+        fstWriterFinalizeHierarchy(xc);
         unsigned long destlen;
         unsigned char *dmem;
         int rc;
@@ -1900,52 +2073,8 @@ void fstWriterClose(fstWriterContext *xc)
             xc->outval_alloc_siz = 0;
         }
 
-        /* write out geom section */
-        fflush(xc->geom_handle);
-        tlen = ftello(xc->geom_handle);
-        errno = 0;
-        if (tlen) {
-            fstWriterMmapSanity(tmem = (unsigned char *)fstMmap(NULL,
-                                                                tlen,
-                                                                PROT_READ | PROT_WRITE,
-                                                                MAP_SHARED,
-                                                                fileno(xc->geom_handle),
-                                                                0),
-                                __FILE__,
-                                __LINE__,
-                                "tmem");
-        }
-
-        if (tmem) {
-            unsigned long destlen = tlen;
-            unsigned char *dmem = (unsigned char *)malloc(compressBound(destlen));
-            int rc = compress2(dmem, &destlen, tmem, tlen, 9);
-
-            if ((rc != Z_OK) || (((fst_off_t)destlen) > tlen)) {
-                destlen = tlen;
-            }
-
-            fixup_offs = ftello(xc->handle);
-            fputc(FST_BL_SKIP, xc->handle); /* temporary tag */
-            fstWriterUint64(xc->handle, destlen + 24); /* section length */
-            fstWriterUint64(xc->handle, tlen); /* uncompressed */
-            /* compressed len is section length - 24 */
-            fstWriterUint64(xc->handle, xc->maxhandle); /* maxhandle */
-            fstFwrite((((fst_off_t)destlen) != tlen) ? dmem : tmem, destlen, 1, xc->handle);
-            fflush(xc->handle);
-
-            fstWriterFseeko(xc, xc->handle, fixup_offs, SEEK_SET);
-            fputc(FST_BL_GEOM, xc->handle); /* actual tag */
-
-            fstWriterFseeko(xc,
-                            xc->handle,
-                            0,
-                            SEEK_END); /* move file pointer to end for any section adds */
-            fflush(xc->handle);
-
-            free(dmem);
-            fstMunmap(tmem, tlen);
-        }
+        /* finalize hierarchy if not done yet */
+        fstWriterFinalizeHierarchy(xc);
 
         if (xc->num_blackouts) {
             uint64_t cur_bl = 0;
@@ -1980,119 +2109,6 @@ void fstWriterClose(fstWriterContext *xc)
                             0,
                             SEEK_END); /* move file pointer to end for any section adds */
             fflush(xc->handle);
-        }
-
-        if (xc->compress_hier) {
-            fst_off_t hl, eos;
-            gzFile zhandle;
-            int zfd;
-            int fourpack_duo = 0;
-#ifndef __MINGW32__
-            int fnam_len = strlen(xc->filename) + 5 + 1;
-            char *fnam = (char *)malloc(fnam_len);
-#endif
-
-            fixup_offs = ftello(xc->handle);
-            fputc(FST_BL_SKIP, xc->handle); /* temporary tag */
-            hlen = ftello(xc->handle);
-            fstWriterUint64(xc->handle, 0); /* section length */
-            fstWriterUint64(xc->handle, xc->hier_file_len); /* uncompressed length */
-
-            if (!xc->fourpack) {
-                unsigned char *mem = (unsigned char *)malloc(FST_GZIO_LEN);
-                zfd = dup(fileno(xc->handle));
-                fflush(xc->handle);
-                zhandle = gzdopen(zfd, "wb4");
-                if (zhandle) {
-                    fstWriterFseeko(xc, xc->hier_handle, 0, SEEK_SET);
-                    for (hl = 0; hl < xc->hier_file_len; hl += FST_GZIO_LEN) {
-                        unsigned len = ((xc->hier_file_len - hl) > FST_GZIO_LEN)
-                                           ? FST_GZIO_LEN
-                                           : (xc->hier_file_len - hl);
-                        fstFread(mem, len, 1, xc->hier_handle);
-                        gzwrite(zhandle, mem, len);
-                    }
-                    gzclose(zhandle);
-                } else {
-                    close(zfd);
-                }
-                free(mem);
-            } else {
-                int lz4_maxlen;
-                unsigned char *mem;
-                unsigned char *hmem = NULL;
-                int packed_len;
-
-                fflush(xc->handle);
-
-                lz4_maxlen = LZ4_compressBound(xc->hier_file_len);
-                mem = (unsigned char *)malloc(lz4_maxlen);
-                errno = 0;
-                if (xc->hier_file_len) {
-                    fstWriterMmapSanity(hmem = (unsigned char *)fstMmap(NULL,
-                                                                        xc->hier_file_len,
-                                                                        PROT_READ | PROT_WRITE,
-                                                                        MAP_SHARED,
-                                                                        fileno(xc->hier_handle),
-                                                                        0),
-                                        __FILE__,
-                                        __LINE__,
-                                        "hmem");
-                }
-                packed_len =
-                    LZ4_compress_default((char *)hmem, (char *)mem, xc->hier_file_len, lz4_maxlen);
-                fstMunmap(hmem, xc->hier_file_len);
-
-                fourpack_duo =
-                    (!xc->repack_on_close) &&
-                    (xc->hier_file_len >
-                     FST_HDR_FOURPACK_DUO_SIZE); /* double pack when hierarchy is large */
-
-                if (fourpack_duo) /* double packing with LZ4 is faster than gzip */
-                {
-                    unsigned char *mem_duo;
-                    int lz4_maxlen_duo;
-                    int packed_len_duo;
-
-                    lz4_maxlen_duo = LZ4_compressBound(packed_len);
-                    mem_duo = (unsigned char *)malloc(lz4_maxlen_duo);
-                    packed_len_duo = LZ4_compress_default((char *)mem,
-                                                          (char *)mem_duo,
-                                                          packed_len,
-                                                          lz4_maxlen_duo);
-
-                    fstWriterVarint(xc->handle, packed_len); /* 1st round compressed length */
-                    fstFwrite(mem_duo, packed_len_duo, 1, xc->handle);
-                    free(mem_duo);
-                } else {
-                    fstFwrite(mem, packed_len, 1, xc->handle);
-                }
-
-                free(mem);
-            }
-
-            fstWriterFseeko(xc, xc->handle, 0, SEEK_END);
-            eos = ftello(xc->handle);
-            fstWriterFseeko(xc, xc->handle, hlen, SEEK_SET);
-            fstWriterUint64(xc->handle, eos - hlen);
-            fflush(xc->handle);
-
-            fstWriterFseeko(xc, xc->handle, fixup_offs, SEEK_SET);
-            fputc(xc->fourpack ? (fourpack_duo ? FST_BL_HIER_LZ4DUO : FST_BL_HIER_LZ4)
-                               : FST_BL_HIER,
-                  xc->handle); /* actual tag now also == compression type */
-
-            fstWriterFseeko(xc,
-                            xc->handle,
-                            0,
-                            SEEK_END); /* move file pointer to end for any section adds */
-            fflush(xc->handle);
-
-#ifndef __MINGW32__
-            snprintf(fnam, fnam_len, "%s.hier", xc->filename);
-            unlink(fnam);
-            free(fnam);
-#endif
         }
 
         /* finalize out header */
